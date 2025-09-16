@@ -60,3 +60,27 @@ class InvalidPlayerColorException(PlayerException):
         super().__init__(message, "INVALID_PLAYER_COLOR")
         self.invalid_color = color
         self.valid_colors = valid_colors or []
+
+class NoCheckersAtPositionException(PlayerException):
+    """Excepción lanzada cuando se intenta acceder a fichas en una posición vacía."""
+    
+    def __init__(self, player_name: str, position: int):
+        message = f"El jugador '{player_name}' no tiene fichas en la posición {position}"
+        super().__init__(message, "NO_CHECKERS_AT_POSITION")
+        self.player_name = player_name
+        self.position = position
+
+
+class NegativeScoreException(PlayerException):
+    """Excepción lanzada cuando se intenta añadir puntos negativos al score."""
+    
+    def __init__(self, points: int):
+        message = f"No se pueden añadir puntos negativos: {points}"
+        super().__init__(message, "NEGATIVE_SCORE")
+        self.invalid_points = points
+
+# EXCEPCIONES DE FICHAS (CHECKER)
+
+class CheckerException(BackgammonException):
+    """Excepción base para errores relacionados con fichas."""
+    pass
