@@ -84,3 +84,30 @@ class NegativeScoreException(PlayerException):
 class CheckerException(BackgammonException):
     """Excepción base para errores relacionados con fichas."""
     pass
+class InvalidCheckerColorException(CheckerException):
+    """Excepción lanzada cuando se crea una ficha con color inválido."""
+    
+    def __init__(self, color: str):
+        message = f"Color de ficha inválido: '{color}'. Debe ser 'white' o 'black'"
+        super().__init__(message, "INVALID_CHECKER_COLOR")
+        self.invalid_color = color
+
+
+class InvalidPositionException(CheckerException):
+    """Excepción lanzada cuando se intenta mover una ficha a una posición inválida."""
+    
+    def __init__(self, position: int, valid_range: str = "0-25"):
+        message = f"Posición inválida: {position}. Rango válido: {valid_range}"
+        super().__init__(message, "INVALID_POSITION")
+        self.invalid_position = position
+        self.valid_range = valid_range
+
+
+class CheckerNotMovableException(CheckerException):
+    """Excepción lanzada cuando se intenta mover una ficha que no puede moverse."""
+    
+    def __init__(self, checker_id: str = None, reason: str = "La ficha no puede moverse"):
+        message = f"Ficha {checker_id or 'desconocida'}: {reason}"
+        super().__init__(message, "CHECKER_NOT_MOVABLE")
+        self.checker_id = checker_id
+        self.reason = reason
