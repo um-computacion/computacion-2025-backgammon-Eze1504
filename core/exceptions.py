@@ -111,3 +111,44 @@ class CheckerNotMovableException(CheckerException):
         super().__init__(message, "CHECKER_NOT_MOVABLE")
         self.checker_id = checker_id
         self.reason = reason
+
+# EXCEPCIONES DE DADOS (DICE)
+
+
+class DiceException(BackgammonException):
+    """Excepción base para errores relacionados con dados."""
+    pass
+
+
+class InvalidDiceValueException(DiceException):
+    """Excepción lanzada cuando se obtiene un valor inválido en los dados."""
+    
+    def __init__(self, value: int, dice_number: int = None):
+        if dice_number:
+            message = f"Valor inválido en dado {dice_number}: {value}. Debe estar entre 1 y 6"
+        else:
+            message = f"Valor inválido en dado: {value}. Debe estar entre 1 y 6"
+        super().__init__(message, "INVALID_DICE_VALUE")
+        self.invalid_value = value
+        self.dice_number = dice_number
+
+
+class DiceNotRolledException(DiceException):
+    """Excepción lanzada cuando se intenta usar dados que no han sido lanzados."""
+    
+    def __init__(self):
+        message = "Los dados no han sido lanzados. Debe lanzar los dados antes de usarlos."
+        super().__init__(message, "DICE_NOT_ROLLED")
+
+
+class NoMovesAvailableException(DiceException):
+    """Excepción lanzada cuando no quedan movimientos disponibles con los dados actuales."""
+    
+    def __init__(self, remaining_moves: list = None):
+        if remaining_moves:
+            moves_str = ", ".join(map(str, remaining_moves))
+            message = f"No quedan movimientos disponibles. Movimientos restantes: [{moves_str}]"
+        else:
+            message = "No quedan movimientos disponibles."
+        super().__init__(message, "NO_MOVES_AVAILABLE")
+        self.remaining_moves = remaining_moves or []
