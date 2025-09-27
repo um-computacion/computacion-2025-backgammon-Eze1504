@@ -97,3 +97,86 @@ class Board:
         
         return self.__points[position].copy()  # Retorna una copia para evitar modificaciones externas
     
+    def is_valid_position(self, position: int) -> bool:
+        """
+        Verifica si una posición es válida en el tablero.
+        
+        Args:
+            position (int): Posición a validar
+            
+        Returns:
+            bool: True si la posición es válida (0-25), False en caso contrario
+        """
+        return 0 <= position <= 25
+    
+    def is_point_occupied_by_opponent(self, position: int, player_color: str) -> bool:
+        """
+        Verifica si un punto está ocupado por el oponente.
+        
+        Args:
+            position (int): Posición del punto
+            player_color (str): Color del jugador ("white" o "black")
+            
+        Returns:
+            bool: True si el punto está ocupado por el oponente, False en caso contrario
+            
+        Raises:
+            InvalidPositionException: Si la posición no es válida
+        """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+        
+        point_checkers = self.__points[position]
+        if not point_checkers:
+            return False
+        
+        # Si hay fichas y son del color opuesto
+        opponent_color = "black" if player_color == "white" else "white"
+        return point_checkers[0].get_color() == opponent_color
+    
+    def is_point_blocked(self, position: int, player_color: str) -> bool:
+        """
+        Verifica si un punto está bloqueado para un jugador.
+        Un punto está bloqueado si tiene 2 o más fichas del oponente.
+        
+        Args:
+            position (int): Posición del punto
+            player_color (str): Color del jugador
+            
+        Returns:
+            bool: True si el punto está bloqueado, False en caso contrario
+            
+        Raises:
+            InvalidPositionException: Si la posición no es válida
+        """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+        
+        point_checkers = self.__points[position]
+        if len(point_checkers) < 2:
+            return False
+        
+        # Si hay 2 o más fichas del oponente, está bloqueado
+        opponent_color = "black" if player_color == "white" else "white"
+        return point_checkers[0].get_color() == opponent_color
+    
+    def can_place_checker(self, position: int, player_color: str) -> bool:
+        """
+        Verifica si un jugador puede colocar una ficha en una posición.
+        
+        Args:
+            position (int): Posición donde se quiere colocar la ficha
+            player_color (str): Color del jugador
+            
+        Returns:
+            bool: True si se puede colocar la ficha, False en caso contrario
+        """
+        if not self.is_valid_position(position):
+            return False
+        
+        # No se puede colocar en un punto bloqueado
+        if self.is_point_blocked(position, player_color):
+            return False
+        
+        return True
+    
