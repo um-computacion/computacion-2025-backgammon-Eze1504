@@ -1,3 +1,4 @@
+
 import random
 from typing import List, Tuple
 
@@ -226,3 +227,4 @@ class Dice:
             str: Representación técnica para debugging
         """
         return f"Dice(last_roll={self._last_roll}, available={self._available_moves}, used={self._used_moves})"
+
