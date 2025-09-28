@@ -214,3 +214,24 @@ class Board:
         self.__points[position].append(checker)
         
         return captured_checker
+    
+    def remove_checker(self, position: int) -> Optional[Checker]:
+        """
+        Remueve una ficha de una posición específica.
+        
+        Args:
+            position (int): Posición de donde remover la ficha
+            
+        Returns:
+            Optional[Checker]: Ficha removida si existe, None en caso contrario
+            
+        Raises:
+            InvalidPositionException: Si la posición no es válida
+        """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+        
+        if not self.__points[position]:
+            return None
+        
+        return self.__points[position].pop()
