@@ -235,3 +235,29 @@ class Board:
             return None
         
         return self.__points[position].pop()
+    
+    def get_checkers_in_bar(self, player_color: str) -> List[Checker]:
+        """
+        Obtiene las fichas de un jugador que están en el bar (capturadas).
+        
+        Args:
+            player_color (str): Color del jugador
+            
+        Returns:
+            List[Checker]: Lista de fichas del jugador en el bar
+        """
+        bar_checkers = self.__points[0]
+        return [checker for checker in bar_checkers if checker.get_color() == player_color]
+    
+    def get_checkers_off_board(self, player_color: str) -> List[Checker]:
+        """
+        Obtiene las fichas de un jugador que están fuera del tablero (sacadas).
+        
+        Args:
+            player_color (str): Color del jugador
+            
+        Returns:
+            List[Checker]: Lista de fichas del jugador fuera del tablero
+        """
+        off_checkers = self.__points[25]
+        return [checker for checker in off_checkers if checker.get_color() == player_color]
