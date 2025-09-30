@@ -261,3 +261,43 @@ class Board:
         """
         off_checkers = self.__points[25]
         return [checker for checker in off_checkers if checker.get_color() == player_color]
+    
+    def get_home_board_range(self, player_color: str) -> Tuple[int, int]:
+        """
+        Obtiene el rango del home board para un jugador.
+        
+        Args:
+            player_color (str): Color del jugador
+            
+        Returns:
+            Tuple[int, int]: Rango (inicio, fin) del home board
+        """
+        if player_color == "white":
+            return (1, 6)  # Home board del jugador blanco
+        else:
+            return (19, 24)  # Home board del jugador negro
+    
+    def all_checkers_in_home_board(self, player_color: str) -> bool:
+        """
+        Verifica si todas las fichas de un jugador están en su home board.
+        
+        Args:
+            player_color (str): Color del jugador
+            
+        Returns:
+            bool: True si todas las fichas están en el home board, False en caso contrario
+        """
+        home_start, home_end = self.get_home_board_range(player_color)
+        
+        # Verificar que no haya fichas en el bar
+        if self.get_checkers_in_bar(player_color):
+            return False
+        
+        # Verificar que no haya fichas fuera del home board
+        for position in range(1, 25):
+            if position < home_start or position > home_end:
+                checkers = self.__points[position]
+                if any(checker.get_color() == player_color for checker in checkers):
+                    return False
+        
+        return True
