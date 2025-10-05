@@ -301,3 +301,84 @@ class Board:
                     return False
         
         return True
+    
+    def count_checkers(self, player_color: str) -> Dict[str, int]:
+        """
+        Cuenta las fichas de un jugador en diferentes áreas del tablero.
+        
+        Args:
+            player_color (str): Color del jugador
+            
+        Returns:
+            Dict[str, int]: Diccionario con conteos por área
+        """
+        counts = {
+            "board": 0,
+            "bar": 0,
+            "off": 0,
+            "total": 0
+        }
+        
+        # Contar fichas en el tablero (puntos 1-24)
+        for position in range(1, 25):
+            checkers = self.__points[position]
+            counts["board"] += sum(1 for checker in checkers if checker.get_color() == player_color)
+        
+        # Contar fichas en el bar
+        counts["bar"] = len(self.get_checkers_in_bar(player_color))
+        
+        # Contar fichas fuera del tablero
+        counts["off"] = len(self.get_checkers_off_board(player_color))
+        
+        counts["total"] = counts["board"] + counts["bar"] + counts["off"]
+        
+        return counts
+    
+    def __str__(self) -> str:
+        """
+        Representación en string del tablero.
+        
+        Returns:
+            str: Representación visual del tablero
+        """
+        lines = []
+        lines.append("Tablero de Backgammon")
+        lines.append("=" * 40)
+        
+        # Mostrar puntos 13-24 (parte superior)
+        upper_line = []
+        for i in range(13, 25):
+            checkers = self.__points[i]
+            if checkers:
+                color_initial = checkers[0].get_color()[0].upper()
+                count = len(checkers)
+                upper_line.append(f"{i:2d}({color_initial}{count})")
+            else:
+                upper_line.append(f"{i:2d}(--)")
+        
+        lines.append("Upper: " + " ".join(upper_line))
+        
+        # Mostrar bar
+        bar_white = len([c for c in self.__points[0] if c.get_color() == "white"])
+        bar_black = len([c for c in self.__points[0] if c.get_color() == "black"])
+        lines.append(f"BAR: W={bar_white}, B={bar_black}")
+        
+        # Mostrar puntos 12-1 (parte inferior)
+        lower_line = []
+        for i in range(12, 0, -1):
+            checkers = self.__points[i]
+            if checkers:
+                color_initial = checkers[0].get_color()[0].upper()
+                count = len(checkers)
+                lower_line.append(f"{i:2d}({color_initial}{count})")
+            else:
+                lower_line.append(f"{i:2d}(--)")
+        
+        lines.append("Lower: " + " ".join(lower_line))
+        
+        # Mostrar off board
+        off_white = len([c for c in self.__points[25] if c.get_color() == "white"])
+        off_black = len([c for c in self.__points[25] if c.get_color() == "black"])
+        lines.append(f"OFF: W={off_white}, B={off_black}")
+        
+        return "\n".join(lines)
