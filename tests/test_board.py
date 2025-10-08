@@ -65,3 +65,43 @@ class TestBoard:
         # Verificar que bar y off están vacíos inicialmente
         assert len(self.board.get_point(0)) == 0   # Bar vacío
         assert len(self.board.get_point(25)) == 0  # Off vacío
+
+        def test_is_valid_position(self):
+           """
+        Test: Validación de posiciones del tablero.
+        """
+        # Posiciones válidas
+        for i in range(26):
+            assert self.board.is_valid_position(i) is True
+        
+        # Posiciones inválidas
+        invalid_positions = [-1, -5, 26, 30, 100]
+        for pos in invalid_positions:
+            assert self.board.is_valid_position(pos) is False
+    
+    def test_get_point_invalid_position(self):
+        """
+        Test: Obtener un punto con posición inválida debe lanzar excepción.
+        """
+        with pytest.raises(InvalidPositionException):
+            self.board.get_point(-1)
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.get_point(26)
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.get_point(100)
+    
+    def test_get_point_returns_copy(self):
+        """
+        Test: get_point debe retornar una copia para evitar modificaciones externas.
+        """
+        original_checkers = self.board.get_point(1)
+        original_count = len(original_checkers)
+        
+        # Modificar la lista retornada
+        returned_checkers = self.board.get_point(1)
+        returned_checkers.clear()
+        
+        # Verificar que el tablero no fue afectado
+        assert len(self.board.get_point(1)) == original_count
