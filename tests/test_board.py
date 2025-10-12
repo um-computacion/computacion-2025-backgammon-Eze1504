@@ -105,3 +105,76 @@ class TestBoard:
         
         # Verificar que el tablero no fue afectado
         assert len(self.board.get_point(1)) == original_count
+
+    def test_is_point_occupied_by_opponent(self):
+        """
+        Test: Verificar si un punto está ocupado por el oponente.
+        """
+        # Punto 1 tiene fichas negras, debe estar ocupado por oponente para blanco
+        assert self.board.is_point_occupied_by_opponent(1, "white") is True
+        assert self.board.is_point_occupied_by_opponent(1, "black") is False
+        
+        # Punto 6 tiene fichas blancas, debe estar ocupado por oponente para negro
+        assert self.board.is_point_occupied_by_opponent(6, "black") is True
+        assert self.board.is_point_occupied_by_opponent(6, "white") is False
+        
+        # Punto vacío no está ocupado por nadie
+        assert self.board.is_point_occupied_by_opponent(2, "white") is False
+        assert self.board.is_point_occupied_by_opponent(2, "black") is False
+    
+    def test_is_point_occupied_by_opponent_invalid_position(self):
+        """
+        Test: is_point_occupied_by_opponent con posición inválida debe lanzar excepción.
+        """
+        with pytest.raises(InvalidPositionException):
+            self.board.is_point_occupied_by_opponent(-1, "white")
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.is_point_occupied_by_opponent(26, "black")
+    
+    def test_is_point_blocked(self):
+        """
+        Test: Verificar si un punto está bloqueado (2+ fichas del oponente).
+        """
+        # Punto 6 tiene 5 fichas blancas, está bloqueado para negro
+        assert self.board.is_point_blocked(6, "black") is True
+        assert self.board.is_point_blocked(6, "white") is False
+        
+        # Punto 1 tiene 2 fichas negras, está bloqueado para blanco
+        assert self.board.is_point_blocked(1, "white") is True
+        assert self.board.is_point_blocked(1, "black") is False
+        
+        # Punto vacío no está bloqueado
+        assert self.board.is_point_blocked(2, "white") is False
+        assert self.board.is_point_blocked(2, "black") is False
+    
+    def test_is_point_blocked_invalid_position(self):
+        """
+        Test: is_point_blocked con posición inválida debe lanzar excepción.
+        """
+        with pytest.raises(InvalidPositionException):
+            self.board.is_point_blocked(-1, "white")
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.is_point_blocked(26, "black")
+    
+    def test_can_place_checker(self):
+        """
+        Test: Verificar si se puede colocar una ficha en una posición.
+        """
+        # Se puede colocar en punto vacío
+        assert self.board.can_place_checker(2, "white") is True
+        assert self.board.can_place_checker(2, "black") is True
+        
+        # Se puede colocar en punto propio
+        assert self.board.can_place_checker(6, "white") is True
+        assert self.board.can_place_checker(1, "black") is True
+        
+        # No se puede colocar en punto bloqueado por oponente
+        assert self.board.can_place_checker(6, "black") is False
+        assert self.board.can_place_checker(1, "white") is False
+        
+        # Posición inválida
+        assert self.board.can_place_checker(-1, "white") is False
+        assert self.board.can_place_checker(26, "black") is False
+    
