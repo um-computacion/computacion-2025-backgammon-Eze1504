@@ -178,3 +178,81 @@ class TestBoard:
         assert self.board.can_place_checker(-1, "white") is False
         assert self.board.can_place_checker(26, "black") is False
     
+    def test_place_checker_on_empty_point(self):
+        """
+        Test: Colocar una ficha en un punto vacío.
+        """
+        checker = Checker("white", 0)
+        captured = self.board.place_checker(checker, 2)
+        
+        # No debe haber captura
+        assert captured is None
+        
+        # La ficha debe estar en la posición
+        checkers_in_point = self.board.get_point(2)
+        assert len(checkers_in_point) == 1
+        assert checkers_in_point[0] == checker
+        assert checkers_in_point[0].get_position() == 2
+    
+    def test_place_checker_capture(self):
+        """
+        Test: Colocar una ficha debe capturar si hay una ficha oponente solitaria.
+        """
+        # Crear un escenario: colocar una ficha negra solitaria en punto 2
+        black_checker = Checker("black", 0)
+        self.board.place_checker(black_checker, 2)
+        
+        # Ahora colocar una ficha blanca debe capturar la negra
+        white_checker = Checker("white", 0)
+        captured = self.board.place_checker(white_checker, 2)
+        
+        # Debe haber capturado la ficha negra
+        assert captured is not None
+        assert captured.get_color() == "black"
+        assert captured.get_position() == 0  # Enviada al bar
+        
+        # El punto 2 debe tener solo la ficha blanca
+        checkers_in_point = self.board.get_point(2)
+        assert len(checkers_in_point) == 1
+        assert checkers_in_point[0] == white_checker
+    
+    def test_place_checker_no_capture_multiple_opponent(self):
+        """
+        Test: No se puede capturar si hay múltiples fichas del oponente.
+        """
+        white_checker = Checker("white", 0)
+        
+        # Intentar colocar en punto 1 que tiene 2 fichas negras
+        with pytest.raises(InvalidPositionException):
+            self.board.place_checker(white_checker, 1)
+    
+    def test_place_checker_invalid_position(self):
+        """
+        Test: place_checker con posición inválida debe lanzar excepción.
+        """
+        checker = Checker("white", 0)
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.place_checker(checker, -1)
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.place_checker(checker, 26)
+    
+    def test_remove_checker(self):
+        """
+        Test: Remover una ficha de un punto.
+        """
+        # Remover una ficha del punto 6 (que tiene 5 fichas blancas)
+        original_count = len(self.board.get_point(6))
+        removed_checker = self.board.remove_checker(6)
+        
+        assert removed_checker is not None
+        assert removed_checker.get_color() == "white"
+        assert len(self.board.get_point(6)) == original_count - 1
+    
+    def test_remove_checker_empty_point(self):
+        """
+        Test: Remover una ficha de un punto vacío debe retornar None.
+        """
+        removed_checker = self.board.remove_checker(2)  # Punto vacío
+        assert removed_checker is None
