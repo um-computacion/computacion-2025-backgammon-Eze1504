@@ -256,3 +256,60 @@ class TestBoard:
         """
         removed_checker = self.board.remove_checker(2)  # Punto vacío
         assert removed_checker is None
+
+    def test_remove_checker_invalid_position(self):
+        """
+        Test: remove_checker con posición inválida debe lanzar excepción.
+        """
+        with pytest.raises(InvalidPositionException):
+            self.board.remove_checker(-1)
+        
+        with pytest.raises(InvalidPositionException):
+            self.board.remove_checker(26)
+    
+    def test_get_checkers_in_bar(self):
+        """
+        Test: Obtener fichas en el bar por color.
+        """
+        # Inicialmente el bar está vacío
+        assert len(self.board.get_checkers_in_bar("white")) == 0
+        assert len(self.board.get_checkers_in_bar("black")) == 0
+        
+        # Agregar fichas al bar
+        white_checker = Checker("white", 0)
+        black_checker = Checker("black", 0)
+        
+        self.board.place_checker(white_checker, 0)  # Bar
+        self.board.place_checker(black_checker, 0)  # Bar
+        
+        white_in_bar = self.board.get_checkers_in_bar("white")
+        black_in_bar = self.board.get_checkers_in_bar("black")
+        
+        assert len(white_in_bar) == 1
+        assert len(black_in_bar) == 1
+        assert white_in_bar[0].get_color() == "white"
+        assert black_in_bar[0].get_color() == "black"
+    
+    def test_get_checkers_off_board(self):
+        """
+        Test: Obtener fichas fuera del tablero por color.
+        """
+        # Inicialmente off está vacío
+        assert len(self.board.get_checkers_off_board("white")) == 0
+        assert len(self.board.get_checkers_off_board("black")) == 0
+        
+        # Agregar fichas a off
+        white_checker = Checker("white", 25)
+        black_checker = Checker("black", 25)
+        
+        self.board.place_checker(white_checker, 25)  # Off
+        self.board.place_checker(black_checker, 25)  # Off
+        
+        white_off = self.board.get_checkers_off_board("white")
+        black_off = self.board.get_checkers_off_board("black")
+        
+        assert len(white_off) == 1
+        assert len(black_off) == 1
+        assert white_off[0].get_color() == "white"
+        assert black_off[0].get_color() == "black"
+    

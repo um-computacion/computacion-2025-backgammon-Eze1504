@@ -5,7 +5,7 @@ import os
 # Agregar el directorio padre al path para importar módulos
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-<<<<<<< HEAD
+
 from core.player import Player
 from core.checker import Checker
 
@@ -121,7 +121,7 @@ class TestPlayer(unittest.TestCase):
         
         checkers_on_board = self.player_white.get_checkers_on_board()
         self.assertEqual(len(checkers_on_board), 2)
-=======
+
 from core.checker import Checker
 
 
@@ -368,4 +368,4 @@ class TestChecker(unittest.TestCase):
 if __name__ == '__main__':
     # Ejecutar tests con verbose output
     unittest.main(verbosity=2)
->>>>>>> origin/main
+
