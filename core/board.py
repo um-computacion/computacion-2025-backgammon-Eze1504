@@ -179,42 +179,29 @@ class Board:
             return False
         
         return True
-    
     def place_checker(self, checker: Checker, position: int) -> Optional[Checker]:
         """
         Coloca una ficha en una posición específica.
-        
-        Args:
-            checker (Checker): Ficha a colocar
-            position (int): Posición donde colocar la ficha
-            
-        Returns:
-            Optional[Checker]: Ficha capturada si existe, None en caso contrario
-            
-        Raises:
-            InvalidPositionException: Si la posición no es válida
         """
         if not self.is_valid_position(position):
             raise InvalidPositionException(f"Posición {position} no es válida.")
-        
+
         if not self.can_place_checker(position, checker.get_color()):
             raise InvalidPositionException(f"No se puede colocar ficha en posición {position}.")
-        
+
         captured_checker = None
         point_checkers = self.__points[position]
-        
-        # Si hay exactamente una ficha del oponente, la capturamos
-        if (len(point_checkers) == 1 and 
-            point_checkers[0].get_color() != checker.get_color()):
+
+        if (len(point_checkers) == 1
+            and point_checkers[0].get_color() != checker.get_color()):
             captured_checker = point_checkers.pop()
-            captured_checker.set_position(0)  # Enviar al bar
-        
-        # Actualizar posición de la ficha y colocarla
-        checker.set_position(position)
+            captured_checker.position = 0   # enviar al bar
+
+        checker.position = position
         self.__points[position].append(checker)
-        
+
         return captured_checker
-    
+
     def remove_checker(self, position: int) -> Optional[Checker]:
         """
         Remueve una ficha de una posición específica.
