@@ -6,6 +6,11 @@ from typing import List, Dict, Optional, Tuple
 from .checker import Checker
 from .player import Player
 from .exceptions import InvalidPositionException
+from .exceptions import (
+    InvalidPositionException,
+    NoCheckersAtPositionException,
+    CheckerNotMovableException,
+)
 
 
 class Board:
@@ -369,3 +374,89 @@ class Board:
         lines.append(f"OFF: W={off_white}, B={off_black}")
         
         return "\n".join(lines)
+    
+
+    # ---------- M2-02: helpers de dirección y destino ----------
+
+    def _validate_color(self, color: str) -> None:
+        if color not in ("white", "black"):
+            raise InvalidMoveException(f"Color inválido: {color}")
+
+    def _direction_for(self, color: str) -> int:
+        """white: -1 (24->1), black: +1 (1->24)"""
+        self._validate_color(color)
+        return -1 if color == "white" else +1
+
+    def _target_from(self, color: str, from_pos: int, steps: int) -> int:
+        """Calcula destino según color/dirección y pasos (valor del dado)."""
+        if not isinstance(steps, int) or steps <= 0:
+            raise InvalidMoveException("Los pasos deben ser un entero > 0.")
+        if steps > 6:
+            # si tus tests permiten >6 por otras reglas, ajustá; por ahora, básico
+            raise InvalidMoveException("Valor de dado inválido (>6) para M2.")
+        if not (1 <= from_pos <= 24):
+            # mover desde bar/off o fuera del tablero no corresponde en M2-02
+            raise InvalidPositionException("El origen debe estar en 1..24.")
+
+        d = self._direction_for(color)
+        return from_pos + d * steps
+
+    def _has_checker_of_color(self, position: int, color: str) -> bool:
+        """Hay al menos una ficha del color en 'position'."""
+        if not (1 <= position <= 24):
+            return False
+        return any(ch.get_color() == color for ch in self.__points[position])
+
+    def _can_land_on(self, color: str, position: int) -> bool:
+        """
+        Se puede caer en:
+        - Punto vacío
+        - Punto propio (>=1 del mismo color)
+        - Punto rival con EXACTAMENTE 1 ficha (captura)
+        Bloqueado si hay 2+ del rival.
+        """
+        if not (1 <= position <= 24):
+            return False
+        pile = self.__points[position]
+        if not pile:
+            return True
+        top_color = pile[0].get_color()
+        if top_color == color:
+            return True
+        # rival
+        return len(pile) == 1  # blot -> capturable
+
+    # ---------- M2-02: validador de movimiento básico ----------
+
+    def validate_basic_move(self, color: str, from_pos: int, steps: int) -> int:
+        """
+        Valida un movimiento SINGLE (un dado).
+        Reglas M2-02:
+          - Origen 1..24 y contiene ficha del color.
+          - steps en 1..6.
+          - Dirección correcta según color.
+          - Destino dentro de 1..24 (sin bearing off en M2).
+          - Destino no bloqueado (no 2+ del rival).
+        Devuelve: índice de destino si es válido.
+        Lanza InvalidMoveException/InvalidPositionException si no.
+        """
+        self._validate_color(color)
+
+        # origen válido y con ficha propia
+        if not (1 <= from_pos <= 24):
+            raise InvalidPositionException("El origen debe estar en 1..24.")
+        if not self._has_checker_of_color(from_pos, color):
+            raise InvalidMoveException("No hay ficha propia en el punto de origen.")
+
+        # destino según dado y dirección
+        to_pos = self._target_from(color, from_pos, steps)
+
+        # sin bearing-off en M2
+        if not (1 <= to_pos <= 24):
+            raise InvalidMoveException("Destino fuera de 1..24 (bearing off no habilitado en M2).")
+
+        # destino no bloqueado
+        if not self._can_land_on(color, to_pos):
+            raise InvalidMoveException("El destino está bloqueado por el rival.")
+
+        return to_pos
