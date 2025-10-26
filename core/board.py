@@ -460,3 +460,48 @@ class Board:
             raise InvalidMoveException("El destino está bloqueado por el rival.")
 
         return to_pos
+    
+    #Helpers de captura
+
+    def _is_blot(self, position: int, color: str) -> bool:
+       """True si en `position` hay exactamente 1 ficha del rival (capturable)."""
+    if not (0 <= position <= 25):
+        return False
+    pile = self.__points[position]
+    if len(pile) != 1:
+        return False
+    return pile[0].get_color() != color
+
+    def can_capture(self, position: int, color: str) -> bool:
+       """
+    ¿Se puede capturar en `position`?
+    Sí, si hay exactamente 1 ficha rival (blot).
+    """
+    if not self.is_valid_position(position):
+         return False
+    # Bar (0) y Off (25) no son objetivos de captura.
+    if position in (0, 25):
+        return False
+    return self._is_blot(position, color)
+
+def _capture_at(self, position: int, color: str):
+    """
+    Efectúa la captura en `position` si hay blot rival.
+    Devuelve la ficha capturada o None.
+    Deja la ficha capturada en BAR (0) y le setea position=0.
+    """
+    if not self.is_valid_position(position):
+        raise InvalidPositionException(position)
+
+    if not self.can_capture(position, color):
+        return None
+
+    captured = self.__points[position].pop()
+    captured.position = 0  # enviar al BAR
+    self.__points[0].append(captured)
+    return captured
+
+
+
+    
+    
