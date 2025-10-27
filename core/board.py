@@ -5,12 +5,13 @@ Módulo que contiene la implementación de la clase Board para el juego de Backg
 from typing import List, Dict, Optional, Tuple
 from .checker import Checker
 from .player import Player
-from .exceptions import InvalidPositionException
+from .exceptions import InvalidPositionException, InvalidMoveException
 from .exceptions import (
     InvalidPositionException,
     NoCheckersAtPositionException,
     CheckerNotMovableException,
 )
+
 
 
 class Board:
@@ -460,3 +461,78 @@ class Board:
             raise InvalidMoveException("El destino está bloqueado por el rival.")
 
         return to_pos
+    
+    #Helpers de captura
+    def _is_blot(self, position: int, color: str) -> bool:
+        """True si en `position` hay exactamente 1 ficha del rival (capturable)."""
+        if not (0 <= position <= 25):
+            return False
+        pile = self.__points[position]
+        if len(pile) != 1:
+            return False
+        return pile[0].get_color() != color
+
+    def can_capture(self, position: int, color: str) -> bool:
+        """
+    ¿Se puede capturar en `position`?
+    Sí, si hay exactamente 1 ficha rival (blot).
+    """
+        if not self.is_valid_position(position):
+            return False
+    # Bar (0) y Off (25) no son objetivos de captura.
+        if position in (0, 25):
+            return False
+        return self._is_blot(position, color)
+
+    def _capture_at(self, position: int, color: str):
+        """
+    Efectúa la captura en `position` si hay blot rival.
+    Devuelve la ficha capturada o None.
+    Deja la ficha capturada en BAR (0) y le setea position=0.
+    """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(position)
+
+        if not self.can_capture(position, color):
+           return None
+
+        captured = self.__points[position].pop()
+        captured.position = 0  # enviar al BAR
+        self.__points[0].append(captured)
+        return captured
+
+#Movimiento con captura
+     
+    def move_checker(self, color: str, from_pos: int, steps: int):
+        """
+    Mueve UNA ficha del color `color` desde `from_pos` con `steps` (1..6).
+    Usa validate_basic_move para validar reglas básicas.
+    Si el destino tiene blot rival, lo captura y lo envía al BAR.
+    Devuelve (from_pos, to_pos, captured_checker|None).
+    """
+    # 1) Validación de movimiento (dirección, rango, bloqueo, etc.)
+        to_pos = self.validate_basic_move(color, from_pos, steps)
+
+    # 2) Quitar ficha del origen (debe existir y ser del color)
+        origin_stack = self.__points[from_pos]
+        if not origin_stack or origin_stack[-1].get_color() != color:
+            found_idx = next((i for i, ch in enumerate(origin_stack) if ch.get_color() == color), None)
+            if found_idx is None:
+               raise ValueError("No hay ficha propia en el punto de origen.")
+            checker = origin_stack.pop(found_idx)
+        else:
+            checker = origin_stack.pop()
+
+    # 3) Captura si hay blot rival en el destino
+        captured = self._capture_at(to_pos, color)
+
+    # 4) Colocar la ficha movida
+        checker.position = to_pos
+        self.__points[to_pos].append(checker)
+
+        return (from_pos, to_pos, captured)
+
+
+
+
+    

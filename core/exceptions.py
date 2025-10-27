@@ -152,3 +152,19 @@ class NoMovesAvailableException(DiceException):
             message = "No quedan movimientos disponibles."
         super().__init__(message, "NO_MOVES_AVAILABLE")
         self.remaining_moves = remaining_moves or []
+
+class InvalidMoveException(BackgammonException):
+    """
+    Excepción lanzada cuando un movimiento no cumple
+    con las reglas del Backgammon.
+    """
+
+    def __init__(self, reason: str = "Movimiento inválido", position: int = None):
+        if position is not None:
+            message = f"{reason} (posición {position})"
+        else:
+            message = reason
+        
+        super().__init__(message, "INVALID_MOVE")
+        self.reason = reason
+        self.position = position
