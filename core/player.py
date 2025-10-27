@@ -262,17 +262,21 @@ class Player:
     
     def get_position_summary(self) -> dict:
         """
-        Obtiene un resumen de la distribución de fichas del jugador.
-        
-        Returns:
-            dict: Resumen con conteos por ubicación
-        """
+    Devuelve un resumen de dónde están las fichas del jugador.
+    Claves: total_checkers, on_board, on_bar, borne_off, in_home_board, can_bear_off
+    """
         total = len(self.checkers)
 
         on_board = 0
         on_bar = 0
         borne_off = 0
         in_home_board = 0
+
+    # Rangos de home board según el color del JUGADOR
+        if self._color == "white":
+            home_start, home_end = 1, 6
+        else:
+            home_start, home_end = 19, 24
 
         for ch in self.checkers:
             if ch.is_on_bar():
@@ -281,22 +285,22 @@ class Player:
                 borne_off += 1
             elif ch.is_on_board():
                 on_board += 1
-            if ch.is_in_home_board():
+            if home_start <= ch.position <= home_end:
                 in_home_board += 1
 
-    # Se puede hacer bearing off si no hay fichas en la barra
-    # y TODAS las fichas del color están en su home board (las ya borne off también cuentan)
+    # Bearing off posible si no hay fichas en barra
+    # y TODAS las fichas están en el home (las borne off cuentan).
         can_bear_off = (on_bar == 0) and (in_home_board + borne_off == total)
 
         return {
-        'total_checkers': total,
-        'on_board': on_board,
-        'on_bar': on_bar,
-        'borne_off': borne_off,
-        'in_home_board': in_home_board,
-        'can_bear_off': can_bear_off
-    }
-    
+
+            'total_checkers': total,
+            'on_board': on_board,
+            'on_bar': on_bar,
+            'borne_off': borne_off,
+            'in_home_board': in_home_board,
+            'can_bear_off': can_bear_off
+        }
     def get_board_representation(self) -> dict:
         """
         Obtiene representación completa de fichas en el tablero.
