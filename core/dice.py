@@ -23,12 +23,11 @@ class Dice:
             seed (int, optional): Semilla para el generador de números aleatorios.
                                  Útil para testing y reproducibilidad.
         """
-        if seed is not None:
-            random.seed(seed)
+        self._rng = random.Random(seed)
 
-        self._last_roll = None
-        self._available_moves = []
-        self._used_moves = []
+        self._last_roll: Tuple[int, int] | None = None
+        self._available_moves: List[int] = []
+        self._used_moves: List[int] = []
 
     def roll(self) -> Tuple[int, int]:
         """
@@ -37,14 +36,13 @@ class Dice:
         Returns:
             tuple: (dado1, dado2) con los valores obtenidos
         """
-        die1 = random.randint(self.MIN_VALUE, self.MAX_VALUE)
-        die2 = random.randint(self.MIN_VALUE, self.MAX_VALUE)
+        die1 = self._rng.randint(self.MIN_VALUE, self.MAX_VALUE)
+        die2 = self._rng.randint(self.MIN_VALUE, self.MAX_VALUE)
 
         self._last_roll = (die1, die2)
         self._calculate_available_moves()
-
         return self._last_roll
-
+    
     def _calculate_available_moves(self):
         """
         Calcula los movimientos disponibles basándose en la última tirada.
