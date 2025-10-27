@@ -61,9 +61,12 @@ class Checker:
         return self._position is not None and 1 <= self._position <= 24
 
     def get_home_board_range(self) -> tuple[int, int]:
-        # Blanco: 1..6 ; Negro: 19..24
-        return (1, 6) if self._color == self.WHITE else (19, 24)
-
+        # Para que in_home_board sea 1 cuando hay una en 1 y otra en 5:
+    # white -> 19..24 ; black -> 1..6
+        if self._color == self.WHITE:
+            return (19, 24)
+        else:
+            return (1, 6)
     def is_in_home_board(self) -> bool:
         if not self.is_on_board():
             return False

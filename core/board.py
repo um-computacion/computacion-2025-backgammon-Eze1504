@@ -400,17 +400,17 @@ class Board:
 
     def _target_from(self, color: str, from_pos: int, steps: int) -> int:
         """Calcula destino según color/dirección y pasos (valor del dado)."""
-        if not isinstance(steps, int) or steps <= 0:
-            raise InvalidMoveException("Los pasos deben ser un entero > 0.")
-        if steps > 6:
-            # si tus tests permiten >6 por otras reglas, ajustá; por ahora, básico
-            raise InvalidMoveException("Valor de dado inválido (>6) para M2.")
-        if not (1 <= from_pos <= 24):
-            # mover desde bar/off o fuera del tablero no corresponde en M2-02
-            raise InvalidPositionException("El origen debe estar en 1..24.")
+        if not isinstance(steps, int) or steps <= 0 or steps > 6:
+            raise ValueError("Los pasos deben ser un entero entre 1 y 6.")
 
-        d = self._direction_for(color)
-        return from_pos + d * steps
+    # dirección: white baja, black sube
+        to_pos = from_pos - steps if color == "white" else from_pos + steps
+
+    # En M2 no hay bearing off: destino debe quedar en 1..24
+        if not (1 <= to_pos <= 24):
+           raise InvalidPositionException("El destino debe estar en 1..24 en M2.")
+
+        return to_pos
 
     def _has_checker_of_color(self, position: int, color: str) -> bool:
         """Hay al menos una ficha del color en 'position'."""
@@ -453,22 +453,19 @@ class Board:
         """
         self._validate_color(color)
 
-        # origen válido y con ficha propia
         if not (1 <= from_pos <= 24):
             raise InvalidPositionException("El origen debe estar en 1..24.")
-        if not self._has_checker_of_color(from_pos, color):
-            raise InvalidMoveException("No hay ficha propia en el punto de origen.")
 
-        # destino según dado y dirección
+    # 1) Validar steps y destino primero (esto lanza ValueError/InvalidPositionException según corresponda)
         to_pos = self._target_from(color, from_pos, steps)
 
-        # sin bearing-off en M2
-        if not (1 <= to_pos <= 24):
-            raise InvalidMoveException("Destino fuera de 1..24 (bearing off no habilitado en M2).")
+    # 2) Ahora sí: debe haber ficha propia en el origen (tests esperan ValueError)
+        if not self._has_checker_of_color(from_pos, color):
+           raise ValueError("No hay ficha propia en el punto de origen.")
 
-        # destino no bloqueado
-        if not self._can_land_on(color, to_pos):
-            raise InvalidMoveException("El destino está bloqueado por el rival.")
+    # 3) Destino no puede estar bloqueado (tests esperan ValueError)
+        if self.is_point_blocked(to_pos, color):
+           raise ValueError("El destino está bloqueado por el oponente.")
 
         return to_pos
     
