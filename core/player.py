@@ -267,14 +267,35 @@ class Player:
         Returns:
             dict: Resumen con conteos por ubicación
         """
+        total = len(self.checkers)
+
+        on_board = 0
+        on_bar = 0
+        borne_off = 0
+        in_home_board = 0
+
+        for ch in self.checkers:
+            if ch.is_on_bar():
+                on_bar += 1
+            elif ch.is_borne_off():
+                borne_off += 1
+            elif ch.is_on_board():
+                on_board += 1
+            if ch.is_in_home_board():
+                in_home_board += 1
+
+    # Se puede hacer bearing off si no hay fichas en la barra
+    # y TODAS las fichas del color están en su home board (las ya borne off también cuentan)
+        can_bear_off = (on_bar == 0) and (in_home_board + borne_off == total)
+
         return {
-            'total_checkers': len(self._checkers),
-            'on_board': len(self.get_checkers_on_board()),
-            'on_bar': len(self.get_checkers_on_bar()),
-            'borne_off': len(self.get_checkers_borne_off()),
-            'in_home_board': len(self.get_checkers_in_home_board()),
-            'can_bear_off': self.can_bear_off()
-        }
+        'total_checkers': total,
+        'on_board': on_board,
+        'on_bar': on_bar,
+        'borne_off': borne_off,
+        'in_home_board': in_home_board,
+        'can_bear_off': can_bear_off
+    }
     
     def get_board_representation(self) -> dict:
         """
