@@ -61,17 +61,19 @@ class Checker:
         return self._position is not None and 1 <= self._position <= 24
 
     def get_home_board_range(self) -> tuple[int, int]:
-        # Para que in_home_board sea 1 cuando hay una en 1 y otra en 5:
-    # white -> 19..24 ; black -> 1..6
-        if self._color == self.WHITE:
-            return (19, 24)
+        """Devuelve el rango del home board según el color."""
+        if self.color == self.WHITE:
+            return (1, 6)  # Cambiado de (19, 24)
         else:
-            return (1, 6)
+            return (19, 24)  # Cambiado de (1, 6)
+        
     def is_in_home_board(self) -> bool:
-        if not self.is_on_board():
+         """True si la ficha está en su home board (y en el tablero)."""
+         if not self.is_on_board():
             return False
-        lo, hi = self.get_home_board_range()
-        return lo <= self._position <= hi
+         start, end = self.get_home_board_range()
+         return start <= self._position <= end
+        
 
     # --------- Movimientos básicos ---------
     def move_to(self, new_position: int) -> int | None:

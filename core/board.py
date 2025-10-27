@@ -403,20 +403,43 @@ class Board:
         if not isinstance(steps, int) or steps <= 0 or steps > 6:
             raise ValueError("Los pasos deben ser un entero entre 1 y 6.")
 
-    # dirección: white baja, black sube
+        # dirección: white baja, black sube
         to_pos = from_pos - steps if color == "white" else from_pos + steps
 
-    # En M2 no hay bearing off: destino debe quedar en 1..24
+        # En M2 no hay bearing off: destino debe quedar en 1..24
         if not (1 <= to_pos <= 24):
-           raise InvalidPositionException("El destino debe estar en 1..24 en M2.")
-
+            raise InvalidPositionException("El destino debe estar en 1..24 en M2.")
+    
         return to_pos
-
+    
     def _has_checker_of_color(self, position: int, color: str) -> bool:
         """Hay al menos una ficha del color en 'position'."""
         if not (1 <= position <= 24):
             return False
         return any(ch.get_color() == color for ch in self.__points[position])
+    
+    def _is_blot(self, position: int, color: str) -> bool:
+        """
+    Verifica si hay un blot (ficha vulnerable) en la posición.
+    Un blot es exactamente 1 ficha del oponente.
+    
+    Args:
+        position: Posición a verificar
+        color: Color del jugador que podría capturar
+        
+    Returns:
+        bool: True si hay exactamente 1 ficha rival, False en caso contrario
+    """
+        if not (1 <= position <= 24):
+            return False
+    
+        pile = self.__points[position]
+        if len(pile) != 1:
+            return False
+    
+    # Verificar que la única ficha es del oponente
+        opponent_color = "black" if color == "white" else "white"
+        return pile[0].get_color() == opponent_color
 
     def _can_land_on(self, color: str, position: int) -> bool:
         """
@@ -440,44 +463,23 @@ class Board:
     # ---------- M2-02: validador de movimiento básico ----------
 
     def validate_basic_move(self, color: str, from_pos: int, steps: int) -> int:
-        """
-        Valida un movimiento SINGLE (un dado).
-        Reglas M2-02:
-          - Origen 1..24 y contiene ficha del color.
-          - steps en 1..6.
-          - Dirección correcta según color.
-          - Destino dentro de 1..24 (sin bearing off en M2).
-          - Destino no bloqueado (no 2+ del rival).
-        Devuelve: índice de destino si es válido.
-        Lanza InvalidMoveException/InvalidPositionException si no.
-        """
         self._validate_color(color)
 
         if not (1 <= from_pos <= 24):
             raise InvalidPositionException("El origen debe estar en 1..24.")
 
-    # 1) Validar steps y destino primero (esto lanza ValueError/InvalidPositionException según corresponda)
+    # PRIMERO: Verificar que hay ficha propia (ANTES de calcular destino)
+        if not self._has_checker_of_color(from_pos, color):
+            raise ValueError("No hay ficha propia en el punto de origen.")
+
+    # SEGUNDO: Calcular y validar destino
         to_pos = self._target_from(color, from_pos, steps)
 
-    # 2) Ahora sí: debe haber ficha propia en el origen (tests esperan ValueError)
-        if not self._has_checker_of_color(from_pos, color):
-           raise ValueError("No hay ficha propia en el punto de origen.")
-
-    # 3) Destino no puede estar bloqueado (tests esperan ValueError)
+    # TERCERO: Verificar que el destino no esté bloqueado
         if self.is_point_blocked(to_pos, color):
-           raise ValueError("El destino está bloqueado por el oponente.")
+            raise ValueError("El destino está bloqueado por el oponente.")
 
         return to_pos
-    
-    #Helpers de captura
-    def _is_blot(self, position: int, color: str) -> bool:
-        """True si en `position` hay exactamente 1 ficha del rival (capturable)."""
-        if not (0 <= position <= 25):
-            return False
-        pile = self.__points[position]
-        if len(pile) != 1:
-            return False
-        return pile[0].get_color() != color
 
     def can_capture(self, position: int, color: str) -> bool:
         """

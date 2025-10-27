@@ -134,14 +134,9 @@ class Player:
         return [checker for checker in self._checkers if checker.is_on_board()]
     
     def get_checkers_in_home_board(self) -> List[Checker]:
-        """
-        Obtiene todas las fichas que están en el home board del jugador.
-        
-        Returns:
-            list: Lista de fichas en el home board
-        """
-        return [checker for checker in self._checkers if checker.is_in_home_board()]
-    
+         """Listado de fichas que están en el home board (en el tablero)."""
+         start, end = self._home_range()
+         return [c for c in self.checkers if c.is_on_board() and start <= c.position <= end]
     def has_checkers_on_bar(self) -> bool:
         """
         Verifica si el jugador tiene fichas en la barra.
@@ -152,30 +147,18 @@ class Player:
         return len(self.get_checkers_on_bar()) > 0
     
     def has_checkers_outside_home_board(self) -> bool:
-        """
-        Verifica si el jugador tiene fichas fuera de su home board.
-        
-        Returns:
-            bool: True si hay fichas fuera del home board o en la barra
-        """
-        if self.has_checkers_on_bar():
-            return True
-        
-        checkers_on_board = self.get_checkers_on_board()
-        checkers_in_home = self.get_checkers_in_home_board()
-        
-        return len(checkers_on_board) > len(checkers_in_home)
-    
+        """True si hay ficha en barra o en tablero fuera del home board."""
+        start, end = self._home_range()
+        for c in self.checkers:
+            if c.is_on_bar():
+                return True
+            if c.is_on_board() and not (start <= c.position <= end):
+                return True
+        return False
     def can_bear_off(self) -> bool:
-        """
-        Verifica si el jugador puede empezar a sacar fichas (bear-off).
-        
-        Para poder hacer bear-off, todas las fichas deben estar en el home board.
-        
-        Returns:
-            bool: True si puede hacer bear-off
-        """
-        return not self.has_checkers_outside_home_board()
+         """En M2: puede hacer bear-off si no hay fichas fuera del home board ni en la barra."""
+         return not self.has_checkers_outside_home_board()
+
     
     def count_checkers_at_position(self, position: int) -> int:
         """
@@ -262,62 +245,21 @@ class Player:
     
     def get_position_summary(self) -> dict:
         """
-    Devuelve un resumen de dónde están las fichas del jugador.
-    Claves: total_checkers, on_board, on_bar, borne_off, in_home_board, can_bear_off
+    Resumen de posiciones (coincide con lo que esperan los tests).
     """
         total = len(self.checkers)
-
-        on_board = 0
-        on_bar = 0
-        borne_off = 0
-        in_home_board = 0
-
-    # Rangos de home board según el color del JUGADOR
-        if self._color == "white":
-            home_start, home_end = 1, 6
-        else:
-            home_start, home_end = 19, 24
-
-        for ch in self.checkers:
-            if ch.is_on_bar():
-                on_bar += 1
-            elif ch.is_borne_off():
-                borne_off += 1
-            elif ch.is_on_board():
-                on_board += 1
-            if home_start <= ch.position <= home_end:
-                in_home_board += 1
-
-    # Bearing off posible si no hay fichas en barra
-    # y TODAS las fichas están en el home (las borne off cuentan).
-        can_bear_off = (on_bar == 0) and (in_home_board + borne_off == total)
-
+        on_board = sum(1 for c in self.checkers if c.is_on_board())
+        on_bar = sum(1 for c in self.checkers if c.is_on_bar())
+        borne_off = sum(1 for c in self.checkers if c.is_borne_off())
+        in_home_board = len(self.get_checkers_in_home_board())
         return {
-
-            'total_checkers': total,
-            'on_board': on_board,
-            'on_bar': on_bar,
-            'borne_off': borne_off,
-            'in_home_board': in_home_board,
-            'can_bear_off': can_bear_off
-        }
-    def get_board_representation(self) -> dict:
-        """
-        Obtiene representación completa de fichas en el tablero.
-        
-        Returns:
-            dict: Diccionario con posición -> cantidad de fichas
-        """
-        board_representation = {}
-        
-        # Contar fichas en cada posición
-        for position in range(0, 26):  # 0 (barra) hasta 25 (bear-off)
-            count = self.count_checkers_at_position(position)
-            if count > 0:
-                board_representation[position] = count
-        
-        return board_representation
-    
+            "total_checkers": total,
+            "on_board": on_board,
+            "on_bar": on_bar,
+            "borne_off": borne_off,
+            "in_home_board": in_home_board,
+            "can_bear_off": self.can_bear_off(),
+            }
     def __str__(self) -> str:
         """
         Representación como string del jugador.
@@ -354,3 +296,25 @@ class Player:
         if not isinstance(other, Player):
             return False
         return self._name == other._name and self._color == other._color
+    
+    def _home_range(self) -> tuple[int, int]:
+        """Retorna el rango del home board según el color del jugador."""
+        if self.color == Checker.WHITE:
+            return (1, 6)
+        else:
+            return (19, 24)
+    def get_board_representation(self) -> dict:
+        """Devuelve un diccionario con la cantidad de fichas por posición.
+    
+    Returns:
+        Dict[int, int]: {posición: cantidad_de_fichas}
+    """
+        representation = {}
+        for checker in self.checkers:
+            if checker.is_on_bar():
+            # Fichas en la barra se cuentan en posición 0
+                representation[0] = representation.get(0, 0) + 1
+            elif checker.position is not None and 1 <= checker.position <= 24:
+            # Fichas en el tablero
+                representation[checker.position] = representation.get(checker.position, 0) + 1
+        return representation

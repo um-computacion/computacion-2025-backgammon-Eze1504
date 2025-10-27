@@ -286,8 +286,8 @@ class TestPlayer(unittest.TestCase):
             'on_board': 2,
             'on_bar': 1,
             'borne_off': 1,
-            'in_home_board': 1,
-            'can_bear_off': False  # Porque hay una ficha en posición 5 (fuera del home board)
+            'in_home_board': 2,   # 1 y 5 están en el home (1–6)
+            'can_bear_off': False 
         }
         
         self.assertEqual(summary, expected)
