@@ -320,15 +320,15 @@ class TestPlayer(unittest.TestCase):
         self.player_white.checkers[1].move_to_bar()
         self.player_white.checkers[2].bear_off()
         self.player_white.add_score(5)
-        
+    
         result = str(self.player_white)
-        
-        self.assertIn("Alice")
-        self.assertIn("white")
-        self.assertIn("Tablero: 1")
-        self.assertIn("Barra: 1")
-        self.assertIn("Fuera: 1")
-        self.assertIn("Score: 5")
+    
+        self.assertIn("Alice", result)
+        self.assertIn("white", result)
+        self.assertIn("Tablero: 1", result)
+        self.assertIn("Barra: 1", result)
+        self.assertIn("Fuera: 1", result)
+        self.assertIn("Score: 5", result)
 
     def test_repr_representation(self):
         """Test: Representación técnica"""
