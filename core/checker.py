@@ -1,79 +1,84 @@
-
 class Checker:
     """
     Representa una ficha individual en el juego de Backgammon.
-
-    Atributos:
-        __color__ (str): "WHITE" o "BLACK".
-        __position__ (int|None): 1..24 puntos; 0 = barra; 25 = borne off; None = sin colocar.
+    Compatible con tests que usan getters estilo get_color/get_position.
     """
 
-    # Colores normalizados (usaremos estos internamente)
-    WHITE = "WHITE"
-    BLACK = "BLACK"
+    # Constantes
+    WHITE = "white"
+    BLACK = "black"
+    BAR_POSITION = 0
+    BEAR_OFF_POSITION = 25
 
-    # Posiciones especiales
-    BAR_POSITION = 0         # Fichas capturadas van a la barra
-    BEAR_OFF_POSITION = 25   # Fichas sacadas del tablero
+    def __init__(self, color: str, position: int | None = None):
+        # normalizar y validar color
+        color = str(color).lower()
+        if color not in (self.WHITE, self.BLACK):
+            raise ValueError(f"Color inválido: {color}. Debe ser '{self.WHITE}' o '{self.BLACK}'")
+        self._color = color
 
-    def __init__(self, color: str, position: int | None = None) -> None:
-        """
-        Inicializa una ficha con color y (opcionalmente) posición.
+        # Posición None por defecto; 0..25 válidas si se provee
+        self._position = None
+        if position is not None:
+            self.set_position(position)
 
-        Args:
-            color: "white"/"WHITE" o "black"/"BLACK"
-            position: None, 0..25 (0=bar, 1..24 tablero, 25=bear off)
-
-        Raises:
-            ValueError: si el color o la posición no son válidos.
-        """
-        # Normalizamos color a MAYÚSCULAS
-        norm = color.upper()
-        if norm not in (self.WHITE, self.BLACK):
-            raise ValueError(f"Color inválido: {color}. Debe ser 'WHITE' o 'BLACK'.")
-
-        self.__color__ = norm
-        self.__position__ = None
-        # set via property to reuse validation
-        self.position = position
-
-    # ---------- Propiedades ----------
+    # --------- API de propiedades "pythonic" ---------
     @property
     def color(self) -> str:
-        """Color de la ficha ("WHITE"/"BLACK")."""
-        return self.__color__
+        return self._color
 
     @property
     def position(self) -> int | None:
-        """Posición actual (1..24), 0=bar, 25=bear off, None si no está colocada."""
-        return self.__position__
+        return self._position
 
     @position.setter
-    def position(self, new_position: int | None) -> None:
-        """Valida y actualiza la posición."""
+    def position(self, new_position: int | None):
+        self.set_position(new_position)
+
+    # --------- API de getters/setters estilo tests ---------
+    def get_color(self) -> str:
+        return self._color
+
+    def get_position(self) -> int | None:
+        return self._position
+
+    def set_position(self, new_position: int | None):
         if new_position is not None:
             if not isinstance(new_position, int):
-                raise ValueError("La posición debe ser un número entero o None.")
+                raise ValueError("La posición debe ser un entero")
             if new_position < 0 or new_position > 25:
-                raise ValueError("La posición debe estar entre 0 y 25, o None.")
-        self.__position__ = new_position
+                raise ValueError("La posición debe estar entre 0 y 25")
+        self._position = new_position
 
-    # ---------- Helpers de estado ----------
+    # --------- Helpers de estado ---------
     def is_on_bar(self) -> bool:
-        return self.__position__ == self.BAR_POSITION
+        return self._position == self.BAR_POSITION
 
     def is_borne_off(self) -> bool:
-        return self.__position__ == self.BEAR_OFF_POSITION
+        return self._position == self.BEAR_OFF_POSITION
 
     def is_on_board(self) -> bool:
-        p = self.__position__
-        return p is not None and 1 <= p <= 24
+        return self._position is not None and 1 <= self._position <= 24
 
-    # ---------- Movimiento ----------
+    def get_home_board_range(self) -> tuple[int, int]:
+        """Devuelve el rango del home board según el color."""
+        if self.color == self.WHITE:
+            return (1, 6)  # Cambiado de (19, 24)
+        else:
+            return (19, 24)  # Cambiado de (1, 6)
+        
+    def is_in_home_board(self) -> bool:
+         """True si la ficha está en su home board (y en el tablero)."""
+         if not self.is_on_board():
+            return False
+         start, end = self.get_home_board_range()
+         return start <= self._position <= end
+        
+
+    # --------- Movimientos básicos ---------
     def move_to(self, new_position: int) -> int | None:
-        """Mueve la ficha (usa el setter para validar) y devuelve la posición anterior."""
-        old = self.__position__
-        self.position = new_position
+        old = self._position
+        self.set_position(new_position)
         return old
 
     def move_to_bar(self) -> int | None:
@@ -82,36 +87,25 @@ class Checker:
     def bear_off(self) -> int | None:
         return self.move_to(self.BEAR_OFF_POSITION)
 
-    # ---------- Home board ----------
-    def get_home_board_range(self) -> tuple[int, int]:
-        """(1,6) para WHITE; (19,24) para BLACK."""
-        return (1, 6) if self.__color__ == self.WHITE else (19, 24)
-
-    def is_in_home_board(self) -> bool:
-        if not self.is_on_board():
-            return False
-        start, end = self.get_home_board_range()
-        return start <= self.__position__ <= end
-
-    # ---------- Representaciones / comparación ----------
+    # --------- Representaciones ---------
     def __str__(self) -> str:
         if self.is_on_bar():
-            pos = "Bar"
+            pos = "En barra"
         elif self.is_borne_off():
-            pos = "BearOff"
+            pos = "Fuera del tablero"
         elif self.is_on_board():
-            pos = f"Point {self.__position__}"
+            pos = f"Punto {self._position}"
         else:
-            pos = "Unplaced"
-        return f"Checker({self.__color__}, {pos})"
+            pos = "Sin posición"
+        return f"Ficha {self._color} - {pos}"
 
     def __repr__(self) -> str:
-        return f"Checker(color='{self.__color__}', position={self.__position__})"
+        return f"Checker(color='{self._color}', position={self._position})"
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other) -> bool:
         return isinstance(other, Checker) and \
-               self.__color__ == other.__color__ and \
-               self.__position__ == other.__position__
+               self._color == other._color and \
+               self._position == other._position
 
     def __hash__(self) -> int:
-        return hash((self.__color__, self.__position__))
+        return hash((self._color, self._position))

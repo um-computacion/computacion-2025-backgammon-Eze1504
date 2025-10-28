@@ -179,11 +179,15 @@ class Board:
         """
         if not self.is_valid_position(position):
             return False
-        
-        # No se puede colocar en un punto bloqueado
+
+    # Permitir siempre colocar en BAR (0) y OFF (25)
+        if position in (0, 25):
+            return True
+
+    # No se puede colocar en un punto bloqueado (2+ del rival)
         if self.is_point_blocked(position, player_color):
             return False
-        
+
         return True
     def place_checker(self, checker: Checker, position: int) -> Optional[Checker]:
         """
@@ -192,20 +196,28 @@ class Board:
         if not self.is_valid_position(position):
             raise InvalidPositionException(f"Posición {position} no es válida.")
 
+    # ✅ 0 = BAR y 25 = OFF: siempre permitir y no aplicar capturas/bloqueos
+        if position in (0, 25):
+            checker.set_position(position)
+            self.__points[position].append(checker)
+            return None
+
+    # del resto igual que antes:
         if not self.can_place_checker(position, checker.get_color()):
             raise InvalidPositionException(f"No se puede colocar ficha en posición {position}.")
 
         captured_checker = None
         point_checkers = self.__points[position]
 
-        if (len(point_checkers) == 1
-            and point_checkers[0].get_color() != checker.get_color()):
-            captured_checker = point_checkers.pop()
-            captured_checker.position = 0   # enviar al bar
+    # Captura si hay exactamente 1 rival (blot)
+        if (len(point_checkers) == 1 and 
+           point_checkers[0].get_color() != checker.get_color()):
+           captured_checker = point_checkers.pop()
+           captured_checker.set_position(0)
+           self.__points[0].append(captured_checker)
 
-        checker.position = position
+        checker.set_position(position)
         self.__points[position].append(checker)
-
         return captured_checker
 
     def remove_checker(self, position: int) -> Optional[Checker]:
@@ -239,8 +251,7 @@ class Board:
         Returns:
             List[Checker]: Lista de fichas del jugador en el bar
         """
-        bar_checkers = self.__points[0]
-        return [checker for checker in bar_checkers if checker.get_color() == player_color]
+        return [c for c in self.__points[0] if c.get_color() == player_color]
     
     def get_checkers_off_board(self, player_color: str) -> List[Checker]:
         """
@@ -252,8 +263,7 @@ class Board:
         Returns:
             List[Checker]: Lista de fichas del jugador fuera del tablero
         """
-        off_checkers = self.__points[25]
-        return [checker for checker in off_checkers if checker.get_color() == player_color]
+        return [c for c in self.__points[25] if c.get_color() == player_color]
     
     def get_home_board_range(self, player_color: str) -> Tuple[int, int]:
         """
@@ -390,23 +400,46 @@ class Board:
 
     def _target_from(self, color: str, from_pos: int, steps: int) -> int:
         """Calcula destino según color/dirección y pasos (valor del dado)."""
-        if not isinstance(steps, int) or steps <= 0:
-            raise InvalidMoveException("Los pasos deben ser un entero > 0.")
-        if steps > 6:
-            # si tus tests permiten >6 por otras reglas, ajustá; por ahora, básico
-            raise InvalidMoveException("Valor de dado inválido (>6) para M2.")
-        if not (1 <= from_pos <= 24):
-            # mover desde bar/off o fuera del tablero no corresponde en M2-02
-            raise InvalidPositionException("El origen debe estar en 1..24.")
+        if not isinstance(steps, int) or steps <= 0 or steps > 6:
+            raise ValueError("Los pasos deben ser un entero entre 1 y 6.")
 
-        d = self._direction_for(color)
-        return from_pos + d * steps
+        # dirección: white baja, black sube
+        to_pos = from_pos - steps if color == "white" else from_pos + steps
 
+        # En M2 no hay bearing off: destino debe quedar en 1..24
+        if not (1 <= to_pos <= 24):
+            raise InvalidPositionException("El destino debe estar en 1..24 en M2.")
+    
+        return to_pos
+    
     def _has_checker_of_color(self, position: int, color: str) -> bool:
         """Hay al menos una ficha del color en 'position'."""
         if not (1 <= position <= 24):
             return False
         return any(ch.get_color() == color for ch in self.__points[position])
+    
+    def _is_blot(self, position: int, color: str) -> bool:
+        """
+    Verifica si hay un blot (ficha vulnerable) en la posición.
+    Un blot es exactamente 1 ficha del oponente.
+    
+    Args:
+        position: Posición a verificar
+        color: Color del jugador que podría capturar
+        
+    Returns:
+        bool: True si hay exactamente 1 ficha rival, False en caso contrario
+    """
+        if not (1 <= position <= 24):
+            return False
+    
+        pile = self.__points[position]
+        if len(pile) != 1:
+            return False
+    
+    # Verificar que la única ficha es del oponente
+        opponent_color = "black" if color == "white" else "white"
+        return pile[0].get_color() == opponent_color
 
     def _can_land_on(self, color: str, position: int) -> bool:
         """
@@ -430,47 +463,23 @@ class Board:
     # ---------- M2-02: validador de movimiento básico ----------
 
     def validate_basic_move(self, color: str, from_pos: int, steps: int) -> int:
-        """
-        Valida un movimiento SINGLE (un dado).
-        Reglas M2-02:
-          - Origen 1..24 y contiene ficha del color.
-          - steps en 1..6.
-          - Dirección correcta según color.
-          - Destino dentro de 1..24 (sin bearing off en M2).
-          - Destino no bloqueado (no 2+ del rival).
-        Devuelve: índice de destino si es válido.
-        Lanza InvalidMoveException/InvalidPositionException si no.
-        """
         self._validate_color(color)
 
-        # origen válido y con ficha propia
         if not (1 <= from_pos <= 24):
             raise InvalidPositionException("El origen debe estar en 1..24.")
-        if not self._has_checker_of_color(from_pos, color):
-            raise InvalidMoveException("No hay ficha propia en el punto de origen.")
 
-        # destino según dado y dirección
+    # PRIMERO: Verificar que hay ficha propia (ANTES de calcular destino)
+        if not self._has_checker_of_color(from_pos, color):
+            raise ValueError("No hay ficha propia en el punto de origen.")
+
+    # SEGUNDO: Calcular y validar destino
         to_pos = self._target_from(color, from_pos, steps)
 
-        # sin bearing-off en M2
-        if not (1 <= to_pos <= 24):
-            raise InvalidMoveException("Destino fuera de 1..24 (bearing off no habilitado en M2).")
-
-        # destino no bloqueado
-        if not self._can_land_on(color, to_pos):
-            raise InvalidMoveException("El destino está bloqueado por el rival.")
+    # TERCERO: Verificar que el destino no esté bloqueado
+        if self.is_point_blocked(to_pos, color):
+            raise ValueError("El destino está bloqueado por el oponente.")
 
         return to_pos
-    
-    #Helpers de captura
-    def _is_blot(self, position: int, color: str) -> bool:
-        """True si en `position` hay exactamente 1 ficha del rival (capturable)."""
-        if not (0 <= position <= 25):
-            return False
-        pile = self.__points[position]
-        if len(pile) != 1:
-            return False
-        return pile[0].get_color() != color
 
     def can_capture(self, position: int, color: str) -> bool:
         """
@@ -531,6 +540,56 @@ class Board:
         self.__points[to_pos].append(checker)
 
         return (from_pos, to_pos, captured)
+    
+    #M2-04 — Reingreso desde el BAR
+
+    def has_checkers_in_bar(self, color: str) -> bool:
+        return any(ch.get_color() == color for ch in self.__points[0])
+    
+    def validate_reentry(self, color: str, steps: int) -> int:
+        if steps < 1 or steps > 6:
+            raise InvalidMoveException("Valor inválido del dado")
+
+    # Calcular destino según color
+        if color == "white":
+            destination = 25 - steps
+        else:  # black
+            destination = steps
+
+        if not self.is_valid_position(destination):
+            raise InvalidMoveException("Destino fuera del tablero al reingresar")
+
+    # No puede reingresar si el destino está bloqueado
+        if self.is_point_blocked(destination, color):
+            raise InvalidMoveException(f"Entrada bloqueada en posición {destination}", destination)
+
+        return destination
+    
+    def reenter_checker(self, color: str, steps: int):
+        """Mueve una ficha desde el BAR al tablero según steps (1..6)."""
+        if not self.has_checkers_in_bar(color):
+            raise InvalidMoveException("No hay fichas para reingresar desde el BAR")
+
+        destination = self.validate_reentry(color, steps)
+
+         # Tomar ficha del BAR
+        bar_stack = self.__points[0]
+        checker = next(ch for ch in bar_stack if ch.get_color() == color)
+        bar_stack.remove(checker)
+
+        # Captura si hay blot rival
+        captured = self._capture_at(destination, color)
+
+         # Colocar ficha en destino
+        checker.position = destination
+        self.__points[destination].append(checker)
+
+        return (0, destination, captured)
+
+
+
+
+
 
 
 

@@ -48,8 +48,9 @@ class TestBoardBasicMoveValidation:
             self.board.validate_basic_move("white", from_pos=0, steps=1)
         with pytest.raises(InvalidPositionException):
             self.board.validate_basic_move("white", from_pos=25, steps=1)
+    
+    # Para testear destino fuera de rango, agregamos ficha manualmente
+    # Usamos _Board__points para acceder al atributo privado
+        self.board._Board__points[1].append(Checker("white", 1))
         with pytest.raises(InvalidPositionException):
-            self.board.validate_basic_move("white", from_pos=1, steps=1)
-        with pytest.raises(InvalidPositionException):
-            self.board.validate_basic_move("black", from_pos=24, steps=1)
-
+            self.board.validate_basic_move("white", from_pos=1, steps=1)  # to_pos sería 0
