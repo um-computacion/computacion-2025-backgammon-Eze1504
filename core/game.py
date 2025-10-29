@@ -67,31 +67,38 @@ class BackgammonGame:
 
     def apply_player_move(self, from_pos: int, steps: int) -> None:
         """
-        Aplica UNA jugada del jugador actual y consume el dado 'steps'.
-        Reglas:
-         - Si hay fichas en BAR, sólo se puede mover desde BAR (from_pos == 0).
-         - 'steps' debe estar disponible en el dice.
-         - USA el motor del Board:
-              * from_pos == 0 -> reenter_checker(color, steps)
-              * otro punto      -> move_checker(color, from_pos, steps)
-        """
+    Aplica UNA jugada del jugador actual y consume el dado 'steps'.
+    Reglas:
+     - Si hay fichas en BAR, sólo se puede mover desde BAR (from_pos == 0).
+     - 'steps' debe estar disponible en el dice.
+     - Motores del Board:
+         * from_pos == 0 -> reenter_checker(color, steps)
+         * otro punto    -> move_or_bear_off(color, from_pos, steps) si existe, si no move_checker
+    """
         if not self._turn_active:
             raise GameRuleError("No hay turno activo. Llamá a start_turn() primero.")
+
         if steps not in self.dice.available_moves():
             raise GameRuleError(f"Dado {steps} no disponible: {self.dice.available_moves()}")
 
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
 
+    # Ejecutar UNA sola acción de movimiento
         if from_pos == self.BAR:
-            # Reingreso con validación/captura delegada a Board
+        # Reingreso (validación/captura delegado al Board)
             self.board.reenter_checker(self.current_color, steps)
         else:
-            # Movimiento normal (M3, sin bearing off)
-            self.board.move_checker(self.current_color, from_pos, steps)
+        # Movimiento normal o bearing off (M4)
+            if hasattr(self.board, "move_or_bear_off"):
+                self.board.move_or_bear_off(self.current_color, from_pos, steps)
+            else:
+            # Fallback M3
+                self.board.move_checker(self.current_color, from_pos, steps)
 
-        # Consumir dado SIEMPRE al final de un movimiento válido
+    # Consumir dado sólo si el movimiento fue válido
         self.dice.use_move(steps)
+
 
     def end_turn(self) -> None:
         """Termina el turno y alterna el color actual."""
