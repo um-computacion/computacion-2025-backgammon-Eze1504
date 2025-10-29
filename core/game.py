@@ -136,21 +136,40 @@ class BackgammonGame:
         if self.game_over:
             return
 
-        # Cálculo robusto del OFF del color ganador
-        off_count = None
+        counts = None
+        off = None
+        board_ = None
+        bar = None
+
         if hasattr(self.board, "count_checkers"):
             counts = self.board.count_checkers(color)
-            off_count = counts.get("off", 0)
+            off = counts.get("off", 0)
+            board_ = counts.get("board", 0)
+            bar = counts.get("bar", 0)
 
-        if off_count is None and hasattr(self.board, "get_checkers_off_board"):
-            off_count = len(self.board.get_checkers_off_board(color))
+        # Fallbacks defensivos (por si tu Board cambia API en el futuro)
+        if off is None and hasattr(self.board, "get_checkers_off_board"):
+            off = len(self.board.get_checkers_off_board(color))  # debería darte el 15
 
-        if off_count is None:
-            # Fallback ultra defensivo (tu Board no lo necesita, pero por si acaso)
-            off_count = 0
+        if board_ is None:
+            # Estimá cantidad en tablero como total - off - bar si tenés 'total'
+            if counts and "total" in counts and off is not None and "bar" in counts:
+                board_ = counts["total"] - off - counts["bar"]
 
-        if off_count >= 15:
+        if bar is None and hasattr(self.board, "has_checkers_in_bar"):
+            bar = 1 if self.board.has_checkers_in_bar(color) else 0
+
+        # --- Condiciones para finalizar ---
+        # 1) Regla directa: 15 borneadas
+        if off is not None and off >= 15:
             self._finalize_game(winner_color=color)
+            return
+
+    # 2) Regla equivalente: no quedan fichas ni en tablero ni en BAR
+        if board_ == 0 and bar == 0:
+            self._finalize_game(winner_color=color)
+            return
+
 
 
 
