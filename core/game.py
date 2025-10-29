@@ -36,6 +36,9 @@ class BackgammonGame:
         self.current_color = starting_color or self._order[0]
         self.turn_number = 1
         self._turn_active = False
+        self.game_over: bool = False
+        self.result = None
+
 
     # ---------------- Utils ----------------
     def _other_color(self, color: str) -> str:
@@ -98,6 +101,8 @@ class BackgammonGame:
 
     # Consumir dado sólo si el movimiento fue válido
         self.dice.use_move(steps)
+        self._maybe_finalize_if_won(self.current_color)
+
 
 
     def end_turn(self) -> None:
@@ -114,4 +119,29 @@ class BackgammonGame:
             dice_values=tuple(self.dice.available_moves()),
             moves_left=len(self.dice.available_moves()),
         )
+    
+    def _maybe_finalize_if_won(self, color: str) -> None:
+        if self.game_over:
+            return
+
+        counts = self.board.count_checkers(color)
+        if counts.get("off", 0) >= 15:  # todas las fichas fuera
+            self._finalize_game(winner_color=color)
+
+
+    def _finalize_game(self, winner_color: str) -> None:
+        loser_color = self._other_color(winner_color)
+        outcome, points = self._determine_outcome(winner_color, loser_color)
+
+        self.game_over = True
+        self.result = {
+            "winner": winner_color,
+            "loser": loser_color,
+            "outcome": outcome,
+            "points": points,
+        }
+
+        self._turn_active = False
+
+
 
