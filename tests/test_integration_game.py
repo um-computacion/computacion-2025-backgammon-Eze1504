@@ -96,8 +96,8 @@ def test_blocked_reentry_then_unblocked_next_turn(board, W, B):
 
     # Black: bloquear 24 con 2 fichas
     board.set_count_at(24, "black", 2)
-    # El resto de negras en una zona neutra
-    board.set_count_at(12, "black", 13)
+    # El resto de negras dentro del home (19..24) para permitir bearing off
+    board.set_count_at(19, "black", 13)
 
     dice = DummyDice()
     g = BackgammonGame(board, dice, (W, B), starting_color=W.color)
