@@ -92,5 +92,8 @@ def test_doubles_allow_four_moves(board, game_double, player_white):
 
 def test_end_turn_switches_player(game_pair, player_black):
     game_pair.start_turn()
+    # Vaciar dados para poder terminar el turno sin jugadas pendientes
+    if hasattr(game_pair.dice, "_vals"):
+        game_pair.dice._vals = []
     game_pair.end_turn()
     assert game_pair.current_color == player_black.color

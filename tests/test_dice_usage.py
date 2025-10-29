@@ -101,9 +101,7 @@ def test_doubles_play_as_many_as_possible(board, W, B):
     # Tercer reingreso
     g.apply_player_move(from_pos=0, steps=4)
 
-    # Si ya no hay más jugadas posibles con 4 (por bloqueos, etc.), ahora sí debe permitir terminar.
-    # En este escenario, aún puede haber una cuarta, pero el test solo exige la regla:
-    # no permitir terminar mientras aún exista una jugada posible.
-    # Para garantizar una, hacemos la cuarta:
-    g.apply_player_move(from_pos=0, steps=4)
+    # Cuarta jugada: ya no hay fichas en BAR; movemos una de 21 -> 17 con 4
+    g.apply_player_move(from_pos=21, steps=4)
     g.end_turn()
+
