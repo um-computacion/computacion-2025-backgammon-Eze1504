@@ -2,6 +2,17 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from typing import Literal
+
+Outcome = Literal["single", "gammon", "backgammon"]
+
+@dataclass(frozen=True)
+class GameResult:
+    winner_color: str
+    loser_color: str
+    outcome: Outcome
+    points: int
+
 
 class GameRuleError(ValueError):
     """Excepción para violaciones de reglas a nivel juego (flujo de turno, dados, BAR)."""
@@ -36,6 +47,10 @@ class BackgammonGame:
         self.current_color = starting_color or self._order[0]
         self.turn_number = 1
         self._turn_active = False
+        self.game_over: bool = False
+        self.result: Optional[GameResult] = None
+
+
 
     # ---------------- Utils ----------------
     def _other_color(self, color: str) -> str:
@@ -98,6 +113,8 @@ class BackgammonGame:
 
     # Consumir dado sólo si el movimiento fue válido
         self.dice.use_move(steps)
+        self._maybe_finalize_if_won(self.current_color)
+
 
 
     def end_turn(self) -> None:
@@ -114,4 +131,86 @@ class BackgammonGame:
             dice_values=tuple(self.dice.available_moves()),
             moves_left=len(self.dice.available_moves()),
         )
+    
+    def _maybe_finalize_if_won(self, color: str) -> None:
+        if self.game_over:
+            return
+
+        counts = None
+        off = None
+        board_ = None
+        bar = None
+
+        if hasattr(self.board, "count_checkers"):
+            counts = self.board.count_checkers(color)
+            off = counts.get("off", 0)
+            board_ = counts.get("board", 0)
+            bar = counts.get("bar", 0)
+
+        # Fallbacks defensivos (por si tu Board cambia API en el futuro)
+        if off is None and hasattr(self.board, "get_checkers_off_board"):
+            off = len(self.board.get_checkers_off_board(color))  # debería darte el 15
+
+        if board_ is None:
+            # Estimá cantidad en tablero como total - off - bar si tenés 'total'
+            if counts and "total" in counts and off is not None and "bar" in counts:
+                board_ = counts["total"] - off - counts["bar"]
+
+        if bar is None and hasattr(self.board, "has_checkers_in_bar"):
+            bar = 1 if self.board.has_checkers_in_bar(color) else 0
+
+        # --- Condiciones para finalizar ---
+        # 1) Regla directa: 15 borneadas
+        if off is not None and off >= 15:
+            self._finalize_game(winner_color=color)
+            return
+
+    # 2) Regla equivalente: no quedan fichas ni en tablero ni en BAR
+        if board_ == 0 and bar == 0:
+            self._finalize_game(winner_color=color)
+            return
+
+
+
+
+    def _finalize_game(self, winner_color: str) -> None:
+        loser_color = self._other_color(winner_color)
+        outcome, points = self._determine_outcome(winner_color, loser_color)
+
+        self.game_over = True
+        self.result = GameResult(
+            winner_color=winner_color,
+            loser_color=loser_color,
+            outcome=outcome,
+            points=points,
+            )
+        self._turn_active = False
+
+
+    def _determine_outcome(self, winner_color: str, loser_color: str):
+        loser_counts = self.board.count_checkers(loser_color)
+        loser_off = loser_counts.get("off", 0)
+
+        # Single (1 punto): el perdedor ya sacó ≥ 1 ficha
+        if loser_off >= 1:
+            return ("single", 1)
+
+        # Gammon / Backgammon (perdedor no sacó ninguna)
+        in_bar = self.board.has_checkers_in_bar(loser_color)
+
+        home_start, home_end = self.board.get_home_board_range(winner_color)
+        in_winner_home = any(
+            self.board.count_checkers_at(pos, loser_color) > 0
+            for pos in range(home_start, home_end + 1)
+    )
+
+        # Backgammon (3 puntos): perdedor sin off y con ficha en BAR o en home del ganador
+        if in_bar or in_winner_home:
+            return ("backgammon", 3)
+
+        # Gammon (2 puntos)
+        return ("gammon", 2)
+
+
+
 
