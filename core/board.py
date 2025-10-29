@@ -15,6 +15,9 @@ from .exceptions import (
 
 
 class Board:
+
+    BAR = 0
+    OFF = 25
     """
     Representa el tablero de Backgammon con 24 puntos (triángulos).
     
@@ -585,6 +588,140 @@ class Board:
         self.__points[destination].append(checker)
 
         return (0, destination, captured)
+    
+        # ---------------- M4: Bearing Off (sacar fichas) ----------------
+
+    def _in_home_board(self, color: str, position: int) -> bool:
+        """True si 'position' está dentro del home board del 'color'."""
+        start, end = self.get_home_board_range(color)
+        return start <= position <= end
+
+    def _has_checkers_beyond(self, color: str, from_pos: int) -> bool:
+        """
+        ¿Hay fichas propias 'más lejos' que from_pos dentro del home?
+        - white: más lejos = posiciones mayores (hacia 6) dentro del home (from_pos+1..6)
+        - black: más lejos = posiciones menores (hacia 19) dentro del home (19..from_pos-1)
+        Se usa para la regla de 'overshoot'.
+        """
+        home_start, home_end = self.get_home_board_range(color)
+        if color == "white":
+            rng = range(from_pos + 1, home_end + 1)  # ej:  from=3 => [4..6]
+        else:
+            rng = range(home_start, from_pos)        # ej:  from=22 => [19..21]
+
+        for p in rng:
+            pile = self.__points[p]
+            if any(ch.get_color() == color for ch in pile):
+                return True
+        return False
+
+    def can_bear_off_from(self, color: str, from_pos: int, steps: int) -> bool:
+        """
+        Regla de bearing off:
+        - Todas las fichas del color deben estar en su home board.
+        - from_pos debe estar dentro del home board del color.
+        - Exacto: white -> from_pos - steps == 0  | black -> from_pos + steps == 25 (no usamos 25 como casilla, pero equivalencia de 'salir')
+        - Overshoot permitido SOLO si no hay fichas más lejos en el home.
+          * white: si from_pos - steps < 1, se permite si no hay fichas en posiciones > from_pos dentro del home.
+          * black: si from_pos + steps > 24, se permite si no hay fichas en posiciones < from_pos dentro del home.
+        """
+        # 1) Todas las fichas en home
+        if not self.all_checkers_in_home_board(color):
+            return False
+
+        # 2) Origen en home
+        if not self._in_home_board(color, from_pos):
+            return False
+
+        # 3) Exacto u overshoot
+        if color == "white":
+            to_pos = from_pos - steps
+            if to_pos == 0:
+                return True
+            if to_pos < 1:
+                # overshoot: dejar salir SOLO si no hay fichas por encima en el home
+                return not self._has_checkers_beyond(color, from_pos)
+            return False
+        else:
+            to_pos = from_pos + steps
+            if to_pos == 25:
+                return True
+            if to_pos > 24:
+                # overshoot para negro: no debe haber fichas por debajo en el home
+                return not self._has_checkers_beyond(color, from_pos)
+            return False
+        
+
+
+    def bear_off_checker(self, color: str, from_pos: int, steps: int):
+        """
+    Saca UNA ficha desde 'from_pos' usando 'steps' (1..6).
+    Requisitos:
+      - can_bear_off_from(color, from_pos, steps) == True
+    Efecto:
+      - Remueve la ficha del origen y la coloca en OFF (25).
+    Devuelve (from_pos, OFF, None)
+    """
+        if not self.can_bear_off_from(color, from_pos, steps):
+            raise InvalidMoveException("No se puede hacer bearing off desde esa posición con ese dado.")
+
+        pile = self.__points[from_pos]
+    # Buscar una ficha del color en el origen
+        idx = next((i for i, ch in enumerate(pile) if ch.get_color() == color), None)
+        if idx is None:
+            raise NoCheckersAtPositionException(f"No hay ficha del color {color} en {from_pos}.")
+    
+        checker = pile.pop(idx)
+        checker.set_position(self.OFF)
+        self.__points[self.OFF].append(checker)
+
+        return (from_pos, self.OFF, None)
+   
+
+
+    def move_or_bear_off(self, color: str, from_pos: int, steps: int):
+        """
+        Movimiento normal o bearing off según corresponda.
+        - Si el destino cae fuera (blanco <1 | negro >24) y se puede bear off, hace bear_off_checker.
+        - Si el destino cae dentro (1..24), usa move_checker normal.
+        """
+        # ¿Dentro del tablero?
+        try:
+            # Intentamos validar como movimiento normal
+            to_pos = self._target_from(color, from_pos, steps)
+            # si _target_from no explota, estaríamos en 1..24 (M4: _target_from ya no bloquea por 'fuera de 1..24')
+            # En tu implementación actual _target_from lanza si no está en 1..24 (M2).
+            # Así que si lanza, iremos al except y probamos bearing off.
+            return self.move_checker(color, from_pos, steps)
+        except InvalidPositionException:
+            # Destino afuera de 1..24 => intentar bearing off
+            return self.bear_off_checker(color, from_pos, steps)
+
+    # ---------------- Helpers públicos de testing ----------------
+
+    def count_checkers_at(self, position: int, color: Optional[str] = None) -> int:
+        """Cuenta fichas en 'position'. Si color no es None, filtra por color."""
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+        if color is None:
+            return len(self.__points[position])
+        return sum(1 for ch in self.__points[position] if ch.get_color() == color)
+
+    def set_count_at(self, position: int, color: str, count: int) -> None:
+        """
+        Helper de test: fuerza la cantidad de fichas de 'color' en 'position'.
+        - Remueve fichas de ambos colores en 'position'.
+        - Agrega 'count' fichas del color indicado en ese punto.
+        """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+
+        # Vaciar el punto
+        self.__points[position].clear()
+        # Agregar 'count' fichas del color
+        for _ in range(max(0, count)):
+            self.__points[position].append(Checker(color, position))
+
 
 
 
