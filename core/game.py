@@ -2,6 +2,17 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from typing import Literal
+
+Outcome = Literal["single", "gammon", "backgammon"]
+
+@dataclass(frozen=True)
+class GameResult:
+    winner_color: str
+    loser_color: str
+    outcome: Outcome
+    points: int
+
 
 class GameRuleError(ValueError):
     """Excepción para violaciones de reglas a nivel juego (flujo de turno, dados, BAR)."""
@@ -37,7 +48,8 @@ class BackgammonGame:
         self.turn_number = 1
         self._turn_active = False
         self.game_over: bool = False
-        self.result = None
+        self.result: Optional[GameResult] = None
+
 
 
     # ---------------- Utils ----------------
@@ -124,9 +136,22 @@ class BackgammonGame:
         if self.game_over:
             return
 
-        counts = self.board.count_checkers(color)
-        if counts.get("off", 0) >= 15:  # todas las fichas fuera
+        # Cálculo robusto del OFF del color ganador
+        off_count = None
+        if hasattr(self.board, "count_checkers"):
+            counts = self.board.count_checkers(color)
+            off_count = counts.get("off", 0)
+
+        if off_count is None and hasattr(self.board, "get_checkers_off_board"):
+            off_count = len(self.board.get_checkers_off_board(color))
+
+        if off_count is None:
+            # Fallback ultra defensivo (tu Board no lo necesita, pero por si acaso)
+            off_count = 0
+
+        if off_count >= 15:
             self._finalize_game(winner_color=color)
+
 
 
     def _finalize_game(self, winner_color: str) -> None:
@@ -134,14 +159,14 @@ class BackgammonGame:
         outcome, points = self._determine_outcome(winner_color, loser_color)
 
         self.game_over = True
-        self.result = {
-            "winner": winner_color,
-            "loser": loser_color,
-            "outcome": outcome,
-            "points": points,
-        }
-
+        self.result = GameResult(
+            winner_color=winner_color,
+            loser_color=loser_color,
+            outcome=outcome,
+            points=points,
+            )
         self._turn_active = False
+
 
     def _determine_outcome(self, winner_color: str, loser_color: str):
         loser_counts = self.board.count_checkers(loser_color)
