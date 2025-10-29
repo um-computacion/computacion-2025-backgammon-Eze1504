@@ -15,6 +15,9 @@ from .exceptions import (
 
 
 class Board:
+
+    BAR = 0
+    OFF = 25
     """
     Representa el tablero de Backgammon con 24 puntos (triángulos).
     
@@ -647,28 +650,34 @@ class Board:
                 # overshoot para negro: no debe haber fichas por debajo en el home
                 return not self._has_checkers_beyond(color, from_pos)
             return False
+        
+
 
     def bear_off_checker(self, color: str, from_pos: int, steps: int):
         """
-        Saca UNA ficha desde 'from_pos' usando 'steps' (1..6).
-        Requisitos:
-          - can_bear_off_from(color, from_pos, steps) == True
-        Efecto:
-          - Remueve la ficha del origen y la coloca en OFF (25).
-        Devuelve (from_pos, OFF, None)
-        """
+    Saca UNA ficha desde 'from_pos' usando 'steps' (1..6).
+    Requisitos:
+      - can_bear_off_from(color, from_pos, steps) == True
+    Efecto:
+      - Remueve la ficha del origen y la coloca en OFF (25).
+    Devuelve (from_pos, OFF, None)
+    """
         if not self.can_bear_off_from(color, from_pos, steps):
             raise InvalidMoveException("No se puede hacer bearing off desde esa posición con ese dado.")
 
         pile = self.__points[from_pos]
-        # Buscar una ficha del color en el origen
+    # Buscar una ficha del color en el origen
         idx = next((i for i, ch in enumerate(pile) if ch.get_color() == color), None)
         if idx is None:
             raise NoCheckersAtPositionException(f"No hay ficha del color {color} en {from_pos}.")
+    
         checker = pile.pop(idx)
-        checker.set_position(OFF)
-        self.__points[OFF].append(checker)
-        return (from_pos, OFF, None)
+        checker.set_position(self.OFF)
+        self.__points[self.OFF].append(checker)
+
+        return (from_pos, self.OFF, None)
+   
+
 
     def move_or_bear_off(self, color: str, from_pos: int, steps: int):
         """
