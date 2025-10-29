@@ -143,5 +143,30 @@ class BackgammonGame:
 
         self._turn_active = False
 
+    def _determine_outcome(self, winner_color: str, loser_color: str):
+        loser_counts = self.board.count_checkers(loser_color)
+        loser_off = loser_counts.get("off", 0)
+
+        # Single (1 punto): el perdedor ya sacó ≥ 1 ficha
+        if loser_off >= 1:
+            return ("single", 1)
+
+        # Gammon / Backgammon (perdedor no sacó ninguna)
+        in_bar = self.board.has_checkers_in_bar(loser_color)
+
+        home_start, home_end = self.board.get_home_board_range(winner_color)
+        in_winner_home = any(
+            self.board.count_checkers_at(pos, loser_color) > 0
+            for pos in range(home_start, home_end + 1)
+    )
+
+        # Backgammon (3 puntos): perdedor sin off y con ficha en BAR o en home del ganador
+        if in_bar or in_winner_home:
+            return ("backgammon", 3)
+
+        # Gammon (2 puntos)
+        return ("gammon", 2)
+
+
 
 
