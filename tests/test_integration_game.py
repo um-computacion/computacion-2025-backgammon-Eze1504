@@ -86,7 +86,8 @@ def test_blocked_reentry_then_unblocked_next_turn(board, W, B):
       - White tiene 1 ficha en BAR y quiere reingresar con '1' (destino 24).
       - Black tiene 2 fichas en 24 -> reingreso de white bloqueado.
       - White NO puede mover -> puede terminar turno aunque queden dados.
-      - Turno de Black: usa '1' para bornear 2 veces desde 24 (desbloquea).
+      - Turno de Black: usa '1' para bornear 2 veces desde 24 (desbloquea) y
+        luego consume los dos '1' restantes con movimientos 19->20.
       - Siguiente turno de White: ahora puede reingresar con '1'.
     """
     clear_board(board)
@@ -112,20 +113,24 @@ def test_blocked_reentry_then_unblocked_next_turn(board, W, B):
     # Turno de Black: (1,1) puede bornear desde 24 dos veces
     dice.reset((1, 1))
     g.start_turn()
-    # Bornear 2 negras desde 24
     g.apply_player_move(from_pos=24, steps=1)
     g.apply_player_move(from_pos=24, steps=1)
-    # Las otras dos '1' ya no tendrán jugada obvia; cerramos turno
+
+    # Consumir los dos '1' restantes con movimientos dentro del home
+    g.apply_player_move(from_pos=19, steps=1)  # 19 -> 20
+    g.apply_player_move(from_pos=19, steps=1)  # otro 19 -> 20
+
+    # Ahora sí puede terminar el turno
     g.end_turn()
     assert g.current_color == W.color
-    # 24 ya no está bloqueado (0 o 1 negra)
-    assert board.count_checkers_at(24, "black") < 2
+    assert board.count_checkers_at(24, "black") < 2  # 24 ya no bloquea
 
     # Turno de White otra vez: (1,1) ahora sí puede reingresar desde BAR a 24
     dice.reset((1, 1))
     g.start_turn()
     g.apply_player_move(from_pos=0, steps=1)  # reingreso a 24
     assert not board.has_checkers_in_bar("white")  # ya reingresó
+
 
 def test_use_all_dice_across_turn_cannot_end_early(board, W, B):
     """
