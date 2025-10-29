@@ -49,6 +49,8 @@ class BackgammonGame:
         self._turn_active = False
         self.game_over: bool = False
         self.result: Optional[GameResult] = None
+        self._turn_start_dice: Tuple[int, ...] = tuple()
+
 
 
 
@@ -74,7 +76,11 @@ class BackgammonGame:
         self._turn_active = True
         if hasattr(self.dice, "roll"):
             self.dice.roll()
+
+        self._turn_start_dice = tuple(self.dice.available_moves())
+
         return self.state()
+    
 
     def can_player_move(self) -> bool:
         """Heurística mínima: si hay dados disponibles, podríamos mover (Board valida)."""
@@ -98,6 +104,24 @@ class BackgammonGame:
 
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
+        
+        # Regla: si es el primer movimiento del turno con 2 dados distintos,
+        # y solo uno es jugable, debe usarse el MAYOR.
+        if tuple(sorted(self.dice.available_moves())) == tuple(sorted(self._turn_start_dice)):
+            # Estamos en el primer movimiento del turno (no se usó ningún dado)
+            rem = list(self.dice.available_moves())
+            # Solo nos importa el caso de dos valores distintos
+            if len(rem) == 2 and rem[0] != rem[1]:
+                a, b = sorted(rem)           # a = menor, b = mayor
+                can_a = self._legal_single_move_exists(self.current_color, a)
+                can_b = self._legal_single_move_exists(self.current_color, b)
+                if can_a != can_b:
+                    must_use = b if can_b else a
+                    if steps != must_use:
+                        raise GameRuleError(
+                        f"Debés usar el dado {must_use} (regla del dado más alto cuando solo uno es jugable)."
+                        )
+
 
     # Ejecutar UNA sola acción de movimiento
         if from_pos == self.BAR:
@@ -121,6 +145,10 @@ class BackgammonGame:
         """Termina el turno y alterna el color actual."""
         if not self._turn_active:
             raise GameRuleError("No hay turno activo para terminar.")
+        # Regla: no podés terminar si aún quedan dados jugables
+        if self.dice.has_moves() and self._any_legal_move_exists_for_any_die(self.current_color):
+            raise GameRuleError("Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno.")
+
         self._turn_active = False
         self.current_color = self._other_color(self.current_color)
         self.turn_number += 1
@@ -210,6 +238,57 @@ class BackgammonGame:
 
         # Gammon (2 puntos)
         return ("gammon", 2)
+    
+    def _legal_single_move_exists(self, color: str, die: int) -> bool:
+        """¿Existe al menos 1 movimiento legal con este valor de dado?"""
+        # Si hay fichas en BAR, solo reingreso
+        if self.board.has_checkers_in_bar(color):
+            try:
+                # Si no levanta excepción, es jugable
+                self.board.validate_reentry(color, die)
+                return True
+            except Exception:
+                return False
+
+        # Sin BAR: intentar cualquier ficha del color
+        for pos in range(1, 25):
+            # ¿hay ficha propia en pos?
+            try:
+                pile_count = self.board.count_checkers_at(pos, color)
+            except Exception:
+                pile_count = 0
+            if pile_count <= 0:
+                continue
+
+            # Bearing off posible
+            try:
+                if hasattr(self.board, "can_bear_off_from") and self.board.can_bear_off_from(color, pos, die):
+                    return True
+            except Exception:
+                pass
+
+            # Movimiento dentro del tablero
+            try:
+                # Si no lanza, es jugable (tu validate_basic_move controla bloqueos y rango)
+                self.board.validate_basic_move(color, pos, die)
+                return True
+            except Exception:
+                continue
+
+        return False
+
+    def _any_legal_move_exists_for_any_die(self, color: str) -> bool:
+        """¿Existe algún movimiento legal con cualquiera de los dados restantes?"""
+        # Evaluá por cada valor único aún disponible
+        try:
+            remaining = list(self.dice.available_moves())
+        except Exception:
+            remaining = []
+        for v in sorted(set(remaining), reverse=True):
+            if self._legal_single_move_exists(color, v):
+                return True
+        return False
+
 
 
 
