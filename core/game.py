@@ -101,14 +101,12 @@ class BackgammonGame:
     """
         if not self._turn_active:
             raise GameRuleError("No hay turno activo. Llamá a start_turn() primero.")
-
         available = self._get_available_moves()
         if steps not in available:
             raise GameRuleError(f"Dado {steps} no disponible: {available}")
-
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
-
+    
         # Regla del dado más alto si quedan exactamente dos valores distintos y solo uno es jugable.
         remaining = self._get_available_moves()
         if len(remaining) == 2 and remaining[0] != remaining[1]:
@@ -122,40 +120,39 @@ class BackgammonGame:
                         f"Debés usar el dado {must_use} al inicio del turno: "
                         "solo uno es jugable y debe ser el más alto."
                     )
-
-         # 1) Ejecutar UNA acción de movimiento (puede incluir bearing off)
+    
+        # 1) Ejecutar UNA acción de movimiento (puede incluir bearing off)
         if from_pos == self.BAR:
             self.board.reenter_checker(self.current_color, steps)
         else:
             if hasattr(self.board, "move_or_bear_off"):
                 self.board.move_or_bear_off(self.current_color, from_pos, steps)
             else:
-                 self.board.move_checker(self.current_color, from_pos, steps)
-
-         # 2) ⚡ Final inmediato si ya llegó a 15 off (algunos tests lo verifican en el acto)
+                self.board.move_checker(self.current_color, from_pos, steps)
+    
+        # 2) Consumir el dado tras un movimiento válido
+        self.dice.use_move(steps)
+    
+         # 3) Verificar victoria después de consumir el dado
         if self.board.count_checkers(self.current_color).get("off", 0) == 15:
             self._finalize_game(winner_color=self.current_color)
-            return  # No hace falta consumir el dado: la partida terminó.
-
-        # 3) Consumir el dado tras un movimiento válido
-        self.dice.use_move(steps)
-
+            return
+    
         # 4) Re-chequeo de victoria por si el orden del test evalúa luego del consumo
         self._maybe_finalize_if_won(self.current_color)
-
 
     def end_turn(self) -> None:
         """Termina el turno y alterna el color actual."""
         if not self._turn_active:
             raise GameRuleError("No hay turno activo para terminar.")
-
         # Regla: no podés terminar si aún quedan dados jugables
         if self.dice.has_moves() and self._any_legal_move_exists_for_any_die(self.current_color):
             raise GameRuleError("Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno.")
-
         # cerrar turno y alternar
         self._turn_active = False
         self.current_color = self._other_color(self.current_color)
+
+
 
     def state(self) -> TurnState:
         _av = self._get_available_moves()
