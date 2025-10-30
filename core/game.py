@@ -137,6 +137,11 @@ class BackgammonGame:
             # Fallback M3
                 self.board.move_checker(self.current_color, from_pos, steps)
 
+         # 🔸 NUEVO: si ya quedó en 15-off, finalizar YA (algunos tests lo checan enseguida)
+        if self.board.count_checkers(self.current_color).get("off", 0) == 15:
+            self._finalize_game(winner_color=self.current_color)
+            return
+
     # ✅ Consumir dado solo si el movimiento fue válido
         self.dice.use_move(steps)
 
@@ -181,12 +186,14 @@ class BackgammonGame:
 
         self.game_over = True
         self.result = SimpleNamespace(
+            # alias compatibles con distintos tests
             winner=winner_color,
+            winner_color=winner_color,
             loser=loser_color,
-            outcome=outcome,  # "single" | "gammon" | "backgammon"
+            loser_color=loser_color,
+            outcome=outcome,   # "single" | "gammon" | "backgammon"
             points=points,
         )
-
     def _determine_outcome(self, winner_color: str, loser_color: str) -> tuple[str, int]:
         """
     Determina single/gammon/backgammon y devuelve (outcome, points).
