@@ -77,7 +77,10 @@ class BackgammonGame:
         if hasattr(self.dice, "roll"):
             self.dice.roll()
 
-        self._turn_start_dice = tuple(self.dice.available_moves())
+        # Guardamos SIEMPRE los dados iniciales del turno (soporta método o lista)
+        _moves_attr = getattr(self.dice, "available_moves", [])
+        _moves = _moves_attr() if callable(_moves_attr) else list(_moves_attr)
+        self._turn_start_dice = tuple(_moves)
 
         return self.state()
     
@@ -99,28 +102,28 @@ class BackgammonGame:
         if not self._turn_active:
             raise GameRuleError("No hay turno activo. Llamá a start_turn() primero.")
 
-        if steps not in self.dice.available_moves():
-            raise GameRuleError(f"Dado {steps} no disponible: {self.dice.available_moves()}")
-
+        _av = self._get_available_moves()
+        if steps not in _av:
+            raise GameRuleError(f"Dado {steps} no disponible: {_av}")
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
         
-        # Regla: si es el primer movimiento del turno con 2 dados distintos,
-        # y solo uno es jugable, debe usarse el MAYOR.
-        if tuple(sorted(self.dice.available_moves())) == tuple(sorted(self._turn_start_dice)):
-            # Estamos en el primer movimiento del turno (no se usó ningún dado)
-            rem = list(self.dice.available_moves())
-            # Solo nos importa el caso de dos valores distintos
-            if len(rem) == 2 and rem[0] != rem[1]:
-                a, b = sorted(rem)           # a = menor, b = mayor
-                can_a = self._legal_single_move_exists(self.current_color, a)
-                can_b = self._legal_single_move_exists(self.current_color, b)
-                if can_a != can_b:
-                    must_use = b if can_b else a
-                    if steps != must_use:
-                        raise GameRuleError(
-                        f"Debés usar el dado {must_use} (regla del dado más alto cuando solo uno es jugable)."
-                        )
+        # 📌 Regla del dado más alto en el primer movimiento del turno:
+        # si quedan exactamente dos valores y son distintos, y solo uno es jugable,
+        # debe usarse el MAYOR.
+        rem = self._get_available_moves()
+        if len(rem) == 2 and rem[0] != rem[1]:
+            a, b = sorted(rem)           # a = menor, b = mayor
+            can_a = self._legal_single_move_exists(self.current_color, a)
+            can_b = self._legal_single_move_exists(self.current_color, b)
+            if can_a != can_b:
+                must_use = b if can_b else a
+                if steps != must_use:
+                    raise GameRuleError(
+                        f"Debés usar el dado {must_use} al inicio del turno: "
+                        "solo uno es jugable y debe ser el más alto."
+                    )
+
 
 
     # Ejecutar UNA sola acción de movimiento
@@ -154,11 +157,13 @@ class BackgammonGame:
         self.turn_number += 1
 
     def state(self) -> TurnState:
+        _av = self._get_available_moves()
         return TurnState(
             current_color=self.current_color,
-            dice_values=tuple(self.dice.available_moves()),
-            moves_left=len(self.dice.available_moves()),
-        )
+            dice_values=tuple(_av),
+            moves_left=len(_av),
+            )
+
     
     def _maybe_finalize_if_won(self, color: str) -> None:
         if self.game_over:
@@ -288,6 +293,12 @@ class BackgammonGame:
             if self._legal_single_move_exists(color, v):
                 return True
         return False
+    
+    def _get_available_moves(self) -> list[int]:
+        """Devuelve los dados disponibles soportando Dice.available_moves como método o lista."""
+        _attr = getattr(self.dice, "available_moves", [])
+        return list(_attr() if callable(_attr) else _attr)
+
 
 
 
