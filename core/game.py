@@ -96,66 +96,63 @@ class BackgammonGame:
      - Si hay fichas en BAR, sólo se puede mover desde BAR (from_pos == 0).
      - 'steps' debe estar disponible en el dice.
      - Motores del Board:
-         * from_pos == 0 -> reenter_checker(color, steps)
-         * otro punto    -> move_or_bear_off(color, from_pos, steps) si existe, si no move_checker
+         * from_pos == self.BAR -> reenter_checker(color, steps)
+         * otro punto           -> move_or_bear_off(color, from_pos, steps) si existe, si no move_checker
     """
         if not self._turn_active:
             raise GameRuleError("No hay turno activo. Llamá a start_turn() primero.")
-
-        _av = self._get_available_moves()
-        if steps not in _av:
-            raise GameRuleError(f"Dado {steps} no disponible: {_av}")
-
+        available = self._get_available_moves()
+        if steps not in available:
+            raise GameRuleError(f"Dado {steps} no disponible: {available}")
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
-
-    # 📌 Regla del dado más alto en el primer movimiento del turno:
-    # si quedan exactamente dos valores y son distintos, y solo uno es jugable,
-    # debe usarse el MAYOR.
-        rem = self._get_available_moves()
-        if len(rem) == 2 and rem[0] != rem[1]:
-            a, b = sorted(rem)           # a = menor, b = mayor
+    
+        # Regla del dado más alto si quedan exactamente dos valores distintos y solo uno es jugable.
+        remaining = self._get_available_moves()
+        if len(remaining) == 2 and remaining[0] != remaining[1]:
+            a, b = sorted(remaining)          # a = menor, b = mayor
             can_a = self._legal_single_move_exists(self.current_color, a)
             can_b = self._legal_single_move_exists(self.current_color, b)
             if can_a != can_b:
                 must_use = b if can_b else a
                 if steps != must_use:
                     raise GameRuleError(
-                    f"Debés usar el dado {must_use} al inicio del turno: "
-                    "solo uno es jugable y debe ser el más alto."
+                        f"Debés usar el dado {must_use} al inicio del turno: "
+                        "solo uno es jugable y debe ser el más alto."
                     )
-
-    # ✅ Ejecutar UNA sola acción de movimiento
+    
+        # 1) Ejecutar UNA acción de movimiento (puede incluir bearing off)
         if from_pos == self.BAR:
-            # Reingreso (validación/captura delegada al Board)
             self.board.reenter_checker(self.current_color, steps)
         else:
-            # Movimiento normal o bearing off (M4)
             if hasattr(self.board, "move_or_bear_off"):
                 self.board.move_or_bear_off(self.current_color, from_pos, steps)
             else:
-            # Fallback M3
                 self.board.move_checker(self.current_color, from_pos, steps)
-
-    # ✅ Consumir dado solo si el movimiento fue válido
+    
+        # 2) Consumir el dado tras un movimiento válido
         self.dice.use_move(steps)
-
-    # ✅ Chequear si ganó luego del movimiento
+    
+         # 3) Verificar victoria después de consumir el dado
+        if self.board.count_checkers(self.current_color).get("off", 0) == 15:
+            self._finalize_game(winner_color=self.current_color)
+            return
+    
+        # 4) Re-chequeo de victoria por si el orden del test evalúa luego del consumo
         self._maybe_finalize_if_won(self.current_color)
-
 
     def end_turn(self) -> None:
         """Termina el turno y alterna el color actual."""
         if not self._turn_active:
             raise GameRuleError("No hay turno activo para terminar.")
-
         # Regla: no podés terminar si aún quedan dados jugables
         if self.dice.has_moves() and self._any_legal_move_exists_for_any_die(self.current_color):
             raise GameRuleError("Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno.")
-
         # cerrar turno y alternar
         self._turn_active = False
         self.current_color = self._other_color(self.current_color)
+
+
 
     def state(self) -> TurnState:
         _av = self._get_available_moves()
@@ -181,12 +178,14 @@ class BackgammonGame:
 
         self.game_over = True
         self.result = SimpleNamespace(
+            # alias compatibles con distintos tests
             winner=winner_color,
+            winner_color=winner_color,
             loser=loser_color,
-            outcome=outcome,  # "single" | "gammon" | "backgammon"
+            loser_color=loser_color,
+            outcome=outcome,   # "single" | "gammon" | "backgammon"
             points=points,
         )
-
     def _determine_outcome(self, winner_color: str, loser_color: str) -> tuple[str, int]:
         """
     Determina single/gammon/backgammon y devuelve (outcome, points).
