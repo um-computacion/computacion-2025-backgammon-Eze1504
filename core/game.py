@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from typing import Literal
+from types import SimpleNamespace
+
 
 Outcome = Literal["single", "gammon", "backgammon"]
 
@@ -56,7 +58,7 @@ class BackgammonGame:
 
     # ---------------- Utils ----------------
     def _other_color(self, color: str) -> str:
-        return self._order[1] if color == self._order[0] else self._order[0]
+        return "black" if color == "white" else "white"
 
     def current_player(self):
         return self.players[self.current_color]
@@ -65,8 +67,7 @@ class BackgammonGame:
         return self.players[self._other_color(self.current_color)]
 
     def _has_bar(self, color: Optional[str] = None) -> bool:
-        color = color or self.current_color
-        return bool(self.board.has_checkers_in_bar(color))
+        return bool(self.board.get_checkers_in_bar(color))
 
     # ---------------- Turno ----------------
     def start_turn(self) -> TurnState:
@@ -74,15 +75,14 @@ class BackgammonGame:
         if self._turn_active:
             raise GameRuleError("El turno ya está activo.")
         self._turn_active = True
+
         if hasattr(self.dice, "roll"):
             self.dice.roll()
 
-        # Guardamos SIEMPRE los dados iniciales del turno (soporta método o lista)
-        _moves_attr = getattr(self.dice, "available_moves", [])
-        _moves = _moves_attr() if callable(_moves_attr) else list(_moves_attr)
-        self._turn_start_dice = tuple(_moves)
-
+        # guardamos una foto de los dados disponibles al inicio (informativo)
+        self._turn_start_dice = tuple(self._get_available_moves())
         return self.state()
+
     
 
     def can_player_move(self) -> bool:
@@ -105,12 +105,13 @@ class BackgammonGame:
         _av = self._get_available_moves()
         if steps not in _av:
             raise GameRuleError(f"Dado {steps} no disponible: {_av}")
+
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
-        
-        # 📌 Regla del dado más alto en el primer movimiento del turno:
-        # si quedan exactamente dos valores y son distintos, y solo uno es jugable,
-        # debe usarse el MAYOR.
+
+    # 📌 Regla del dado más alto en el primer movimiento del turno:
+    # si quedan exactamente dos valores y son distintos, y solo uno es jugable,
+    # debe usarse el MAYOR.
         rem = self._get_available_moves()
         if len(rem) == 2 and rem[0] != rem[1]:
             a, b = sorted(rem)           # a = menor, b = mayor
@@ -120,41 +121,41 @@ class BackgammonGame:
                 must_use = b if can_b else a
                 if steps != must_use:
                     raise GameRuleError(
-                        f"Debés usar el dado {must_use} al inicio del turno: "
-                        "solo uno es jugable y debe ser el más alto."
+                    f"Debés usar el dado {must_use} al inicio del turno: "
+                    "solo uno es jugable y debe ser el más alto."
                     )
 
-
-
-    # Ejecutar UNA sola acción de movimiento
+    # ✅ Ejecutar UNA sola acción de movimiento
         if from_pos == self.BAR:
-        # Reingreso (validación/captura delegado al Board)
+            # Reingreso (validación/captura delegada al Board)
             self.board.reenter_checker(self.current_color, steps)
         else:
-        # Movimiento normal o bearing off (M4)
+            # Movimiento normal o bearing off (M4)
             if hasattr(self.board, "move_or_bear_off"):
                 self.board.move_or_bear_off(self.current_color, from_pos, steps)
             else:
             # Fallback M3
                 self.board.move_checker(self.current_color, from_pos, steps)
 
-    # Consumir dado sólo si el movimiento fue válido
+    # ✅ Consumir dado solo si el movimiento fue válido
         self.dice.use_move(steps)
-        self._maybe_finalize_if_won(self.current_color)
 
+    # ✅ Chequear si ganó luego del movimiento
+        self._maybe_finalize_if_won(self.current_color)
 
 
     def end_turn(self) -> None:
         """Termina el turno y alterna el color actual."""
         if not self._turn_active:
             raise GameRuleError("No hay turno activo para terminar.")
+
         # Regla: no podés terminar si aún quedan dados jugables
         if self.dice.has_moves() and self._any_legal_move_exists_for_any_die(self.current_color):
             raise GameRuleError("Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno.")
 
+        # cerrar turno y alternar
         self._turn_active = False
         self.current_color = self._other_color(self.current_color)
-        self.turn_number += 1
 
     def state(self) -> TurnState:
         _av = self._get_available_moves()
@@ -162,142 +163,104 @@ class BackgammonGame:
             current_color=self.current_color,
             dice_values=tuple(_av),
             moves_left=len(_av),
-            )
+        )
 
     
     def _maybe_finalize_if_won(self, color: str) -> None:
-        if self.game_over:
-            return
-
-        counts = None
-        off = None
-        board_ = None
-        bar = None
-
-        if hasattr(self.board, "count_checkers"):
-            counts = self.board.count_checkers(color)
-            off = counts.get("off", 0)
-            board_ = counts.get("board", 0)
-            bar = counts.get("bar", 0)
-
-        # Fallbacks defensivos (por si tu Board cambia API en el futuro)
-        if off is None and hasattr(self.board, "get_checkers_off_board"):
-            off = len(self.board.get_checkers_off_board(color))  # debería darte el 15
-
-        if board_ is None:
-            # Estimá cantidad en tablero como total - off - bar si tenés 'total'
-            if counts and "total" in counts and off is not None and "bar" in counts:
-                board_ = counts["total"] - off - counts["bar"]
-
-        if bar is None and hasattr(self.board, "has_checkers_in_bar"):
-            bar = 1 if self.board.has_checkers_in_bar(color) else 0
-
-        # --- Condiciones para finalizar ---
-        # 1) Regla directa: 15 borneadas
-        if off is not None and off >= 15:
+        counts = self.board.count_checkers(color)
+        if counts.get("off", 0) == 15:
             self._finalize_game(winner_color=color)
-            return
-
-    # 2) Regla equivalente: no quedan fichas ni en tablero ni en BAR
-        if board_ == 0 and bar == 0:
-            self._finalize_game(winner_color=color)
-            return
-
-
-
 
     def _finalize_game(self, winner_color: str) -> None:
+        # early-exit si ya terminó
+        if getattr(self, "game_over", False):
+            return
+
         loser_color = self._other_color(winner_color)
         outcome, points = self._determine_outcome(winner_color, loser_color)
 
         self.game_over = True
-        self.result = GameResult(
-            winner_color=winner_color,
-            loser_color=loser_color,
-            outcome=outcome,
+        self.result = SimpleNamespace(
+            winner=winner_color,
+            loser=loser_color,
+            outcome=outcome,  # "single" | "gammon" | "backgammon"
             points=points,
-            )
-        self._turn_active = False
+        )
 
-
-    def _determine_outcome(self, winner_color: str, loser_color: str):
+    def _determine_outcome(self, winner_color: str, loser_color: str) -> tuple[str, int]:
+        """
+    Determina single/gammon/backgammon y devuelve (outcome, points).
+    Regla usada:
+      - single: perdedor ya borneó ≥1 ficha (off > 0) -> 1 punto
+      - backgammon: perdedor con 0 off y (≥1 en BAR o ≥1 dentro del home del ganador) -> 3 puntos
+      - gammon: perdedor con 0 off y sin fichas en BAR ni en el home del ganador -> 2 puntos
+    """
         loser_counts = self.board.count_checkers(loser_color)
-        loser_off = loser_counts.get("off", 0)
-
-        # Single (1 punto): el perdedor ya sacó ≥ 1 ficha
-        if loser_off >= 1:
+        if loser_counts.get("off", 0) > 0:
             return ("single", 1)
 
-        # Gammon / Backgammon (perdedor no sacó ninguna)
-        in_bar = self.board.has_checkers_in_bar(loser_color)
-
+        # 0 off: ver BAR o fichas en el home del ganador
+        has_bar = self.board.get_checkers_in_bar(loser_color) != []
         home_start, home_end = self.board.get_home_board_range(winner_color)
-        in_winner_home = any(
-            self.board.count_checkers_at(pos, loser_color) > 0
-            for pos in range(home_start, home_end + 1)
-    )
+        has_in_winner_home = any(
+            any(ch.get_color() == loser_color for ch in self.board.get_point(p))
+            for p in range(home_start, home_end + 1)
+        )
 
-        # Backgammon (3 puntos): perdedor sin off y con ficha en BAR o en home del ganador
-        if in_bar or in_winner_home:
-            return ("backgammon", 3)
-
-        # Gammon (2 puntos)
+        if has_bar or has_in_winner_home:
+             return ("backgammon", 3)
         return ("gammon", 2)
+
     
-    def _legal_single_move_exists(self, color: str, die: int) -> bool:
-        """¿Existe al menos 1 movimiento legal con este valor de dado?"""
-        # Si hay fichas en BAR, solo reingreso
-        if self.board.has_checkers_in_bar(color):
+    def _legal_single_move_exists(self, color: str, steps: int) -> bool:
+        """
+    ¿Existe una única jugada legal con 'steps' para 'color', sin tocar el estado?
+    Respeta prioridad de BAR. Usa solo validadores del Board.
+    """
+    # Si hay fichas en BAR, solo vale reingreso
+        if self._has_bar(color):
             try:
-                # Si no levanta excepción, es jugable
-                self.board.validate_reentry(color, die)
+                self.board.validate_reentry(color, steps)
                 return True
             except Exception:
                 return False
 
-        # Sin BAR: intentar cualquier ficha del color
+        # Si no hay en BAR: buscar cualquier origen 1..24 con ficha propia que valide
+        # (movimiento normal o bearing off)
         for pos in range(1, 25):
-            # ¿hay ficha propia en pos?
-            try:
-                pile_count = self.board.count_checkers_at(pos, color)
-            except Exception:
-                pile_count = 0
-            if pile_count <= 0:
-                continue
-
-            # Bearing off posible
-            try:
-                if hasattr(self.board, "can_bear_off_from") and self.board.can_bear_off_from(color, pos, die):
+            if self.board._has_checker_of_color(pos, color):
+            # Movimiento normal
+                try:
+                    self.board.validate_basic_move(color, pos, steps)
                     return True
-            except Exception:
-                pass
-
-            # Movimiento dentro del tablero
-            try:
-                # Si no lanza, es jugable (tu validate_basic_move controla bloqueos y rango)
-                self.board.validate_basic_move(color, pos, die)
-                return True
-            except Exception:
-                continue
-
+                except Exception:
+                    pass
+                # Bearing off
+                try:
+                    if hasattr(self.board, "can_bear_off_from") and self.board.can_bear_off_from(color, pos, steps):
+                        return True
+                except Exception:
+                    pass
         return False
 
     def _any_legal_move_exists_for_any_die(self, color: str) -> bool:
-        """¿Existe algún movimiento legal con cualquiera de los dados restantes?"""
-        # Evaluá por cada valor único aún disponible
-        try:
-            remaining = list(self.dice.available_moves())
-        except Exception:
-            remaining = []
-        for v in sorted(set(remaining), reverse=True):
-            if self._legal_single_move_exists(color, v):
+        """
+    ¿Existe al menos un movimiento legal con alguno de los dados disponibles?
+    (sin mutar el board)
+    """
+        moves = self._get_available_moves()
+        # probar únicos para evitar trabajo duplicado
+        for die in sorted(set(moves)):
+            if self._legal_single_move_exists(color, die):
                 return True
         return False
     
     def _get_available_moves(self) -> list[int]:
-        """Devuelve los dados disponibles soportando Dice.available_moves como método o lista."""
-        _attr = getattr(self.dice, "available_moves", [])
-        return list(_attr() if callable(_attr) else _attr)
+        """
+    Acceso robusto a los dados: tolera .available_moves (lista/propiedad) o .available_moves() (método).
+    """
+        am = getattr(self.dice, "available_moves")
+        return list(am() if callable(am) else am)
 
 
 
