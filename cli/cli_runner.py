@@ -81,28 +81,25 @@ class CommandRunner:
         try:
             self.game.apply_player_move(from_pos, steps)
         except (InvalidMoveException, NoMovesAvailableException) as ex:
-            # errores esperables de reglas
             raise CommandExecError(f"Movimiento inválido: {ex}") from ex
         except DiceNotRolledException as ex:
             raise CommandExecError(str(ex)) from ex
         except BackgammonException as ex:
             raise CommandExecError(str(ex)) from ex
+        except Exception as ex:
+        #  acá capturamos cosas como GameRuleError del motor,
+        # y las convertimos en un error de ejecución entendible por la CLI
+            raise CommandExecError(str(ex)) from ex
 
-        # Después de mover, mostramos estado
         st = self.game.state()
         view = render_game(self.game)
-
-        # Mensaje base
         msg = [
             f"OK: moviste desde {from_pos} {steps} paso(s).",
             f"Dados restantes: {tuple(st.dice_values)} (movimientos: {st.moves_left})",
-        ]
-
-        # Si el juego terminó, avisamos
+    ]
         if getattr(self.game, "game_over", False):
             result = getattr(self.game, "result", None)
             if result is not None:
-                # result suele ser SimpleNamespace / objeto con winner_color / victory_type
                 winner = getattr(result, "winner_color", "desconocido")
                 vtype = getattr(result, "victory_type", "single")
                 msg.append(f"\n¡Partida terminada! Ganó {winner} ({vtype}).")
@@ -110,6 +107,7 @@ class CommandRunner:
                 msg.append("\n¡Partida terminada!")
         msg.append("\n" + view)
         return "\n".join(msg)
+
 
     def _do_end(self) -> str:
         try:
