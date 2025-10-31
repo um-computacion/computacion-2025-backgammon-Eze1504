@@ -164,8 +164,8 @@ class BackgammonGame:
 
     
     def _maybe_finalize_if_won(self, color: str) -> None:
-        counts = self.board.count_checkers(color)
-        if counts.get("off", 0) == 15:
+        # Si ya no quedan fichas en tablero (15 off), el juego termina ya.
+        if self.board.count_off(color) == 15:
             self._finalize_game(winner_color=color)
 
     def _finalize_game(self, winner_color: str) -> None:
