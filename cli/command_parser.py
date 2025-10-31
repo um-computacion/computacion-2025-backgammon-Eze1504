@@ -1,27 +1,13 @@
+
 # -*- coding: utf-8 -*-
 """
 Parser de comandos para la CLI de Backgammon.
-
-Comandos soportados:
-  - roll | r
-  - move <from> <steps>
-  - end
-  - show | status
-  - help | h | ?
-  - quit | q | exit
-
-Notas:
-  * <from>: 1..24, o 'bar' (0), 'off' (25)
-  * <steps>: 1..6
 """
 
 from dataclasses import dataclass
+from core.exceptions import CommandParseError  # usar la excepción del core
 
 __all__ = ["Command", "parse_command", "CommandParseError"]
-
-
-class CommandParseError(Exception):
-    """Error de parseo de comando de la CLI."""
 
 
 @dataclass
