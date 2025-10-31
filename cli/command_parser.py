@@ -1,84 +1,98 @@
+
 # -*- coding: utf-8 -*-
+"""
+Parser de comandos para la CLI de Backgammon.
+"""
+
 from dataclasses import dataclass
-from typing import Optional
-from .cli_exceptions import CommandParseError
+# Importamos la base y la re-exportamos con el mismo nombre en este módulo
+from core.exceptions import CommandParseError as _CoreCommandParseError
 
-@dataclass(frozen=True)
+class CommandParseError(_CoreCommandParseError):
+    """Alias exportado desde cli.command_parser para que los tests
+    puedan hacer `from cli.command_parser import CommandParseError`
+    y capturar exactamente esta clase."""
+    pass
+
+@dataclass
 class Command:
-    name: str                 # "move", "roll", "quit", "help"
-    from_pos: Optional[int] = None
-    steps: Optional[int] = None
+    name: str
+    from_pos: int | None = None
+    steps: int | None = None
 
-_MOVE_ALIASES = {"move", "m"}
-_ROLL_ALIASES = {"roll", "r"}
-_QUIT_ALIASES = {"quit", "exit", "q"}
-_HELP_ALIASES = {"help", "h", "?"}
 
-def _parse_int(token: str) -> int:
-    try:
-        return int(token, 10)
-    except Exception:
-        raise CommandParseError(f"Se esperaba un número entero y llegó: '{token}'")
-
-def _normalize_from_pos(tok: str) -> int:
-    t = tok.strip().lower()
-    if t in {"bar", "b"}:
+def _parse_point(token: str) -> int:
+    """
+    Convierte el token del origen a un entero:
+      - 'bar' -> 0
+      - 'off' -> 25
+      - '1'..'24' -> int
+    """
+    t = token.strip().lower()
+    if t == "bar":
         return 0
-    if t in {"off"}:
+    if t == "off":
         return 25
-    val = _parse_int(t)
-    if not (0 <= val <= 25):
-        raise CommandParseError("El origen debe estar entre 0 (bar) y 25 (off).")
-    return val
+    try:
+        v = int(t)
+    except ValueError as ex:
+        raise CommandParseError("from debe ser un número, 'bar' o 'off'.") from ex
+    if v < 0 or v > 25:
+        raise CommandParseError("from fuera de rango (0..25). Usá 'bar' para 0 y 'off' para 25.")
+    return v
 
-def _normalize_steps(tok: str) -> int:
-    val = _parse_int(tok)
-    if not (1 <= val <= 6):
-        raise CommandParseError("Los pasos (dado) deben estar entre 1 y 6.")
-    return val
 
-def _normalize_command_name(head: str) -> str:
-    h = head.strip().lower()
-    if h in _MOVE_ALIASES:
-        return "move"
-    if h in _ROLL_ALIASES:
-        return "roll"
-    if h in _QUIT_ALIASES:
-        return "quit"
-    if h in _HELP_ALIASES:
-        return "help"
-    raise CommandParseError(f"Comando desconocido: '{head}'. Probá 'help'.")
-
-def parse_command(line: str) -> Command:
+def parse_command(raw: str) -> Command:
     """
-    Parsea una línea de texto en un Command.
-    Formatos:
-      - move <from> <steps>   (ej. 'move 13 5', 'move bar 4')
-      - roll
-      - quit
-      - help
+    Parsea una línea cruda de la consola y devuelve un Command.
+    Lanza CommandParseError ante entradas inválidas.
     """
-    if line is None:
-        raise CommandParseError("Entrada vacía.")
-    parts = [p for p in line.strip().split() if p]
+    if raw is None:
+        raise CommandParseError("Comando vacío. Escribí 'help' para ver opciones.")
+
+    parts = raw.strip().split()
     if not parts:
-        raise CommandParseError("Entrada vacía.")
+        raise CommandParseError("Comando vacío. Escribí 'help' para ver opciones.")
 
-    cmd = _normalize_command_name(parts[0])
+    cmd = parts[0].lower()
 
+    # quit / help / show / roll / end
+    if cmd in ("quit", "q", "exit"):
+        return Command(name="quit")
+
+    if cmd in ("help", "h", "?"):
+        return Command(name="help")
+
+    if cmd in ("show", "status"):
+        return Command(name="show")
+
+    if cmd in ("roll", "r"):
+        if len(parts) != 1:
+            raise CommandParseError("Uso: roll")
+        return Command(name="roll")
+
+    if cmd == "end":
+        if len(parts) != 1:
+            raise CommandParseError("Uso: end")
+        return Command(name="end")
+
+    # move <from> <steps>
     if cmd == "move":
         if len(parts) != 3:
-            raise CommandParseError("Uso: move <from> <steps>. Ej: 'move 13 5' o 'move bar 4'.")
-        from_pos = _normalize_from_pos(parts[1])
-        steps = _normalize_steps(parts[2])
+            raise CommandParseError("Uso: move <from> <steps>  (ej: 'move 13 5' o 'move bar 4')")
+
+        from_pos = _parse_point(parts[1])
+
+        try:
+            steps = int(parts[2])
+        except ValueError as ex:
+            raise CommandParseError("steps debe ser un entero entre 1 y 6.") from ex
+        if steps < 1 or steps > 6:
+            raise CommandParseError("steps debe estar entre 1 y 6.")
+
         return Command(name="move", from_pos=from_pos, steps=steps)
 
-    if cmd in ("roll", "quit", "help"):
-        if len(parts) != 1:
-            raise CommandParseError(f"'{cmd}' no acepta parámetros.")
-        return Command(name=cmd)
+    # Desconocido
+    raise CommandParseError(f"Comando desconocido: {cmd}. Escribí 'help' para ver opciones.")
 
-    # No debería llegar
-    raise CommandParseError(f"Comando no soportado: '{cmd}'")
-
-__all__ = ["parse_command", "Command"]
+__all__ = ["Command", "parse_command", "CommandParseError"]

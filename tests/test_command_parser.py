@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import pytest
 from cli.command_parser import parse_command, Command
-from cli.cli_exceptions import CommandParseError
+from core.exceptions import CommandParseError
 
 def test_parse_help_and_quit_and_roll():
     assert parse_command("help").name == "help"
