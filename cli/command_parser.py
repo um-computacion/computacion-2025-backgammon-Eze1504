@@ -3,7 +3,7 @@
 Parser de comandos para la CLI de Backgammon.
 
 Comandos soportados:
-  - roll
+  - roll | r
   - move <from> <steps>
   - end
   - show | status
@@ -17,7 +17,12 @@ Notas:
 
 from dataclasses import dataclass
 
-__all__ = ["Command", "parse_command"]
+__all__ = ["Command", "parse_command", "CommandParseError"]
+
+
+class CommandParseError(Exception):
+    """Error de parseo de comando de la CLI."""
+
 
 @dataclass
 class Command:
@@ -41,23 +46,23 @@ def _parse_point(token: str) -> int:
     try:
         v = int(t)
     except ValueError as ex:
-        raise ValueError("from debe ser un número, 'bar' o 'off'.") from ex
+        raise CommandParseError("from debe ser un número, 'bar' o 'off'.") from ex
     if v < 0 or v > 25:
-        raise ValueError("from fuera de rango (0..25). Usá 'bar' para 0 y 'off' para 25.")
+        raise CommandParseError("from fuera de rango (0..25). Usá 'bar' para 0 y 'off' para 25.")
     return v
 
 
 def parse_command(raw: str) -> Command:
     """
     Parsea una línea cruda de la consola y devuelve un Command.
-    Lanza ValueError ante entradas inválidas.
+    Lanza CommandParseError ante entradas inválidas.
     """
     if raw is None:
-        raise ValueError("Comando vacío. Escribí 'help' para ver opciones.")
+        raise CommandParseError("Comando vacío. Escribí 'help' para ver opciones.")
 
     parts = raw.strip().split()
     if not parts:
-        raise ValueError("Comando vacío. Escribí 'help' para ver opciones.")
+        raise CommandParseError("Comando vacío. Escribí 'help' para ver opciones.")
 
     cmd = parts[0].lower()
 
@@ -71,31 +76,31 @@ def parse_command(raw: str) -> Command:
     if cmd in ("show", "status"):
         return Command(name="show")
 
-    if cmd == "roll":
+    if cmd in ("roll", "r"):
         if len(parts) != 1:
-            raise ValueError("Uso: roll")
+            raise CommandParseError("Uso: roll")
         return Command(name="roll")
 
     if cmd == "end":
         if len(parts) != 1:
-            raise ValueError("Uso: end")
+            raise CommandParseError("Uso: end")
         return Command(name="end")
 
     # move <from> <steps>
     if cmd == "move":
         if len(parts) != 3:
-            raise ValueError("Uso: move <from> <steps>  (ej: 'move 13 5' o 'move bar 4')")
+            raise CommandParseError("Uso: move <from> <steps>  (ej: 'move 13 5' o 'move bar 4')")
 
         from_pos = _parse_point(parts[1])
 
         try:
             steps = int(parts[2])
         except ValueError as ex:
-            raise ValueError("steps debe ser un entero entre 1 y 6.") from ex
+            raise CommandParseError("steps debe ser un entero entre 1 y 6.") from ex
         if steps < 1 or steps > 6:
-            raise ValueError("steps debe estar entre 1 y 6.")
+            raise CommandParseError("steps debe estar entre 1 y 6.")
 
         return Command(name="move", from_pos=from_pos, steps=steps)
 
     # Desconocido
-    raise ValueError(f"Comando desconocido: {cmd}. Escribí 'help' para ver opciones.")
+    raise CommandParseError(f"Comando desconocido: {cmd}. Escribí 'help' para ver opciones.")
