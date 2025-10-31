@@ -3,6 +3,7 @@ from typing import Tuple
 from .command_parser import Command
 from .cli_exceptions import CommandExecError
 from core.exceptions import InvalidMoveException
+from .board_ascii import render_game  
 
 class CommandRunner:
     def __init__(self, game) -> None:
@@ -11,15 +12,22 @@ class CommandRunner:
     def execute(self, cmd: Command) -> Tuple[bool, str]:
         if cmd.name == "help":
             return (False, self._help_text())
+
         if cmd.name == "quit":
             return (True, "Saliendo del juego.")
+
         if cmd.name == "roll":
             try:
                 self.game.start_turn()
             except Exception as ex:
                 raise CommandExecError(str(ex)) from ex
             st = self.game.state()
-            return (False, f"Turno de {st.current_color}. Dados: {st.dice_values} (movimientos: {st.moves_left})")
+            view = render_game(self.game)
+            msg = (
+                f"Turno de {st.current_color}. Dados: {tuple(st.dice_values)} "
+                f"(movimientos: {st.moves_left})\n\n{view}"
+            )
+            return (False, msg)
 
         if cmd.name == "move":
             try:
@@ -29,12 +37,24 @@ class CommandRunner:
             except Exception as ex:
                 raise CommandExecError(str(ex)) from ex
 
+            # Si terminó el juego, informar resultado + vista final
             if getattr(self.game, "game_over", False):
                 r = self.game.result
-                return (True, f"Juego terminado. Ganador: {r.winner_color} ({r.outcome}, {r.points} punto(s)).")
+                view = render_game(self.game)
+                msg = (
+                    f"Juego terminado. Ganador: {r.winner_color} "
+                    f"({r.outcome}, {r.points} punto(s)).\n\n{view}"
+                )
+                return (True, msg)
 
+            # Si no terminó, mostrar estado y vista
             st = self.game.state()
-            return (False, f"OK. Dados restantes: {st.dice_values} (movimientos: {st.moves_left})")
+            view = render_game(self.game)
+            msg = (
+                f"OK. Dados restantes: {tuple(st.dice_values)} "
+                f"(movimientos: {st.moves_left})\n\n{view}"
+            )
+            return (False, msg)
 
         raise CommandExecError(f"Comando no ejecutable: {cmd.name}")
 
@@ -51,5 +71,3 @@ class CommandRunner:
             "  * 'steps' debe estar entre 1 y 6.\n"
             "  * Las reglas del juego se validan en el motor.\n"
         )
-
-__all__ = ["CommandRunner"]
