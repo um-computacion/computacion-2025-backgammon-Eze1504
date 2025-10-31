@@ -168,3 +168,7 @@ class InvalidMoveException(BackgammonException):
         super().__init__(message, "INVALID_MOVE")
         self.reason = reason
         self.position = position
+
+class CommandParseError(ValueError):
+    """Error de parseo de comandos en la CLI."""
+    pass
