@@ -692,6 +692,19 @@ class Board:
             self.__points[position].append(Checker(color, position))
 
 
+    def count_off(self, color: str) -> int:
+        """
+    Devuelve el número de fichas borneadas (off) para el color dado.
+    
+    Args:
+        color (str): Color del jugador ('white' o 'black')
+        
+    Returns:
+        int: Número de fichas fuera del tablero (en posición 25)
+    """
+        return len(self.get_checkers_off_board(color))
+
+
 
 
 
