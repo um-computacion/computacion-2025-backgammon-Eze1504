@@ -1,50 +1,83 @@
-
 # -*- coding: utf-8 -*-
 """
 Parser de comandos para la CLI de Backgammon.
+
+- Comandos soportados:
+  quit|q|exit
+  help|h|?
+  show|status
+  roll|r
+  end
+  move <from> <steps>        # <from>: 1..24 o 'bar' ; steps: 1..6
+  hint
+  undo
+  save [ruta]                # opcionalmente una ruta de salida
+
+- Errores:
+  CommandParseError (subclase de core.exceptions.CommandParseError si está disponible)
+
+- Salida:
+  Un objeto Command con los campos relevantes para cada comando.
 """
 
+from __future__ import annotations
 from dataclasses import dataclass
-# Importamos la base y la re-exportamos con el mismo nombre en este módulo
-from core.exceptions import CommandParseError as _CoreCommandParseError
+from typing import Optional
+
+# Intentamos heredar de la excepción del core para compatibilidad con el runner/CLI
+try:
+    from core.exceptions import CommandParseError as _CoreCommandParseError
+except Exception:  # pragma: no cover
+    _CoreCommandParseError = Exception
+
 
 class CommandParseError(_CoreCommandParseError):
-    """Alias exportado desde cli.command_parser para que los tests
-    puedan hacer `from cli.command_parser import CommandParseError`
-    y capturar exactamente esta clase."""
+    """Error de parseo de comando (compatible con core.exceptions.CommandParseError si existe)."""
     pass
+
 
 @dataclass
 class Command:
     name: str
-    from_pos: int | None = None
-    steps: int | None = None
+    # Para move:
+    from_pos: Optional[int] = None
+    steps: Optional[int] = None
+    # Para save:
+    path: Optional[str] = None
 
+
+__all__ = ["Command", "CommandParseError", "parse_command"]
+
+
+# ------------------------- Helpers -------------------------
 
 def _parse_point(token: str) -> int:
     """
-    Convierte el token del origen a un entero:
+    Convierte el punto de origen:
       - 'bar' -> 0
-      - 'off' -> 25
-      - '1'..'24' -> int
+      - 'off' -> 25  (alias aceptado por compatibilidad con tests)
+      - '1'..'24' -> entero
+    Lanza CommandParseError si no es válido.
     """
     t = token.strip().lower()
     if t == "bar":
         return 0
     if t == "off":
-        return 25
+        return 25  # alias de borneadas
     try:
-        v = int(t)
+        val = int(t)
     except ValueError as ex:
-        raise CommandParseError("from debe ser un número, 'bar' o 'off'.") from ex
-    if v < 0 or v > 25:
-        raise CommandParseError("from fuera de rango (0..25). Usá 'bar' para 0 y 'off' para 25.")
-    return v
+        raise CommandParseError("from debe ser un entero entre 1 y 24 o 'bar'.") from ex
+    if val < 1 or val > 24:
+        raise CommandParseError("from debe estar entre 1 y 24 (o 'bar').")
+    return val
 
+
+# ------------------------- Parser principal -------------------------
 
 def parse_command(raw: str) -> Command:
     """
-    Parsea una línea cruda de la consola y devuelve un Command.
+    Parsea una línea cruda y devuelve un Command.
     Lanza CommandParseError ante entradas inválidas.
     """
     if raw is None:
@@ -92,7 +125,24 @@ def parse_command(raw: str) -> Command:
 
         return Command(name="move", from_pos=from_pos, steps=steps)
 
+    # hint
+    if cmd == "hint":
+        if len(parts) != 1:
+            raise CommandParseError("Uso: hint")
+        return Command(name="hint")
+
+    # undo
+    if cmd == "undo":
+        if len(parts) != 1:
+            raise CommandParseError("Uso: undo")
+        return Command(name="undo")
+
+    # save [path]
+    if cmd == "save":
+        if len(parts) > 2:
+            raise CommandParseError("Uso: save [ruta]")
+        path = parts[1] if len(parts) == 2 else None
+        return Command(name="save", path=path)
+
     # Desconocido
     raise CommandParseError(f"Comando desconocido: {cmd}. Escribí 'help' para ver opciones.")
-
-__all__ = ["Command", "parse_command", "CommandParseError"]
