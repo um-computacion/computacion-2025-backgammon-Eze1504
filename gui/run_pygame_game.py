@@ -76,6 +76,46 @@ def init_game() -> BackgammonGame:
     game = BackgammonGame(board, dice, (white, black), starting_color=white.color)
     return game
 
+# --- Shim de compatibilidad para Board ---
+def board_count_at(board, point, color):
+    """
+    Devuelve la cantidad de fichas de 'color' en 'point' adaptándose a la API del Board.
+    Convenciones: BAR = 0, OFF = 25.
+    """
+    # Si existe la API ideal, usala.
+    if hasattr(board, "count_at"):
+        try:
+            return board.count_at(point, color)
+        except Exception:
+            pass
+
+    # OFF (25)
+    if point == OFF_POS:
+        for name in ("count_off", "get_off_count", "off_count", "get_off"):
+            if hasattr(board, name):
+                return getattr(board, name)(color)
+
+    # BAR (0)
+    if point == BAR_POS:
+        for name in ("count_bar", "get_bar_count", "bar_count", "get_bar"):
+            if hasattr(board, name):
+                return getattr(board, name)(color)
+
+    # Puntos 1..24 — intentos comunes
+    for name in ("get_count_at", "point_count", "count_point", "count", "get_count"):
+        if hasattr(board, name):
+            try:
+                return getattr(board, name)(point, color)
+            except TypeError:
+                # Algunos métodos podrían tener la firma invertida (color, point)
+                try:
+                    return getattr(board, name)(color, point)
+                except Exception:
+                    pass
+
+    # Si no encontramos nada, devolvemos 0 para no romper el render.
+    return 0
+
 
 def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rect]:
     """
@@ -208,15 +248,14 @@ def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Opti
     surface.blit(txt2, (off_rect.centerx - txt2.get_width() // 2, off_rect.top + 6))
 
 
-def draw_checkers(surface, positions, bar_rect, off_rect, board: Board):
+def draw_checkers(surface, positions, bar_rect, off_rect, board):
     # Dibuja stacks para cada punto (cap MAX_STACK_RENDER visual)
     def draw_stack_at(point, color):
-        count = board.count_at(point, color)
+        count = board_count_at(board, point, color)
         if count <= 0:
             return
         if point in positions:
             cx, is_top, area = positions[point]
-            # stak hacia arriba (top) o abajo (bottom)
             for i in range(min(count, MAX_STACK_RENDER)):
                 if is_top:
                     cy = area.bottom - (CHECKER_RADIUS + i * (2 * CHECKER_RADIUS + CHECKER_PAD))
@@ -226,7 +265,6 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board: Board):
                 pygame.draw.circle(surface, fill, (cx, cy), CHECKER_RADIUS)
                 pygame.draw.circle(surface, (0, 0, 0), (cx, cy), CHECKER_RADIUS, 2)
         elif point == BAR_POS:
-            # Bar: apilamos en el centro del bar_rect
             cx = bar_rect.centerx
             top = bar_rect.top + 40
             for i in range(min(count, MAX_STACK_RENDER)):
@@ -235,7 +273,6 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board: Board):
                 pygame.draw.circle(surface, fill, (cx, cy), CHECKER_RADIUS)
                 pygame.draw.circle(surface, (0, 0, 0), (cx, cy), CHECKER_RADIUS, 2)
         elif point == OFF_POS:
-            # Off: apilamos del lado superior
             cx = off_rect.centerx
             top = off_rect.top + 40
             for i in range(min(count, MAX_STACK_RENDER)):
@@ -251,6 +288,7 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board: Board):
     draw_stack_at(BAR_POS, "black")
     draw_stack_at(OFF_POS, "white")
     draw_stack_at(OFF_POS, "black")
+
 
 
 def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg: Optional[str]):
