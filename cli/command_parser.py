@@ -5,10 +5,14 @@ Parser de comandos para la CLI de Backgammon.
 """
 
 from dataclasses import dataclass
-from core.exceptions import CommandParseError  # usar la excepción del core
+# Importamos la base y la re-exportamos con el mismo nombre en este módulo
+from core.exceptions import CommandParseError as _CoreCommandParseError
 
-__all__ = ["Command", "parse_command", "CommandParseError"]
-
+class CommandParseError(_CoreCommandParseError):
+    """Alias exportado desde cli.command_parser para que los tests
+    puedan hacer `from cli.command_parser import CommandParseError`
+    y capturar exactamente esta clase."""
+    pass
 
 @dataclass
 class Command:
@@ -90,3 +94,5 @@ def parse_command(raw: str) -> Command:
 
     # Desconocido
     raise CommandParseError(f"Comando desconocido: {cmd}. Escribí 'help' para ver opciones.")
+
+__all__ = ["Command", "parse_command", "CommandParseError"]
