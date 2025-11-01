@@ -76,3 +76,109 @@ def test_invalid_player_name_message():
 def test_invalid_move_with_position():
     err = InvalidMoveException("Fuera de rango", 30)
     assert "posición" in str(err)
+
+def make_game():
+    board = Board()
+    dice = Dice()
+    white = Player("White", "white")
+    black = Player("Black", "black")
+    return BackgammonGame(board, dice, (white, black), starting_color="white")
+
+
+def test_state_moves_left_reflects_available(monkeypatch):
+    g = make_game()
+    # Simulamos dados disponibles 1,1,3
+    monkeypatch.setattr(g, "_get_available_moves", lambda: [1, 1, 3])
+    st = g.state()
+    assert st.current_color == "white"
+    assert st.dice_values == (1, 1, 3)
+    assert st.moves_left == 3
+
+
+def test_bar_priority_forces_from_bar(monkeypatch):
+    g = make_game()
+    g.start_turn()
+
+    # Hay fichas en BAR -> mover desde punto 5 debe fallar
+    monkeypatch.setattr(g, "_has_bar", lambda c=None: True)
+    # Simulamos que el dado 2 está disponible
+    monkeypatch.setattr(g, "_get_available_moves", lambda: [2])
+
+    with pytest.raises(GameRuleError):
+        g.apply_player_move(from_pos=5, steps=2)
+
+
+def test_high_die_rule_enforced_when_only_one_is_legal(monkeypatch):
+    g = make_game()
+    g.start_turn()
+
+    # Dos dados distintos y solo uno jugable: debe usar el más alto
+    monkeypatch.setattr(g, "_has_bar", lambda c=None: False)
+    monkeypatch.setattr(g, "_get_available_moves", lambda: [2, 5])
+
+    # Solo el 5 es legal
+    monkeypatch.setattr(g, "_legal_single_move_exists", lambda color, steps: (steps == 5))
+
+    # board.move_checker llamado cuando se usa el dado correcto
+    called = {"ok": False}
+    def fake_move_checker(color, from_pos, steps):
+        called["ok"] = True
+    monkeypatch.setattr(g.board, "move_checker", fake_move_checker)
+
+    # Intentar con 2 -> debe fallar por la regla del dado más alto
+    with pytest.raises(GameRuleError):
+        g.apply_player_move(from_pos=12, steps=2)
+
+    # Con 5 -> debe pasar y llamar al board
+    # _get_available_moves vuelve a evaluar → mantenemos mismo monkeypatch
+    # Simulamos consumo de dado (no usamos el real) para no interferir
+    monkeypatch.setattr(g.dice, "use_move", lambda v: None)
+    g.apply_player_move(from_pos=12, steps=5)
+    assert called["ok"] is True
+
+
+def test_end_turn_blocks_when_moves_available(monkeypatch):
+    g = make_game()
+    g.start_turn()
+
+    # Hay dados y hay al menos una jugada -> no se puede terminar
+    monkeypatch.setattr(g.dice, "has_moves", lambda: True, raising=False)
+    monkeypatch.setattr(g, "_any_legal_move_exists_for_any_die", lambda color: True)
+
+    with pytest.raises(GameRuleError):
+        g.end_turn()
+
+
+def test_end_turn_allows_when_no_moves_left(monkeypatch):
+    g = make_game()
+    g.start_turn()
+
+    # No quedan jugadas posibles -> se puede terminar y cambia el turno
+    monkeypatch.setattr(g.dice, "has_moves", lambda: False, raising=False)
+    monkeypatch.setattr(g, "_any_legal_move_exists_for_any_die", lambda color: False)
+
+    current = g.current_color
+    g.end_turn()
+    assert g.current_color != current
+
+
+
+def test_move_happy_path_without_bar(monkeypatch):
+    g = make_game()
+    g.start_turn()
+
+    # Sin BAR, dado 3 disponible, mover desde 13 con 3
+    monkeypatch.setattr(g, "_has_bar", lambda c=None: False)
+    monkeypatch.setattr(g, "_get_available_moves", lambda: [3])
+
+    moved = {"ok": False}
+    def fake_move_checker(color, from_pos, steps):
+        assert color == g.current_color
+        assert from_pos == 13 and steps == 3
+        moved["ok"] = True
+
+    monkeypatch.setattr(g.board, "move_checker", fake_move_checker)
+    monkeypatch.setattr(g.dice, "use_move", lambda v: None)
+
+    g.apply_player_move(from_pos=13, steps=3)
+    assert moved["ok"] is True
