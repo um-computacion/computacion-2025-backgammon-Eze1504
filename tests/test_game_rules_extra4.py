@@ -219,3 +219,113 @@ def test_high_die_rule_allows_when_both_playable(monkeypatch):
 
     g.apply_player_move(from_pos=13, steps=2)
     assert used["v"] == 2  # se consumió el menor y fue válido
+
+def _players():
+    return Player("W", "white"), Player("K", "black")
+
+
+def _game_with(dice):
+    b = Board()
+    w, k = _players()
+    return BackgammonGame(b, dice, (w, k), starting_color=w.color)
+
+
+def test_bar_priority_blocks_move_from_non_bar(monkeypatch):
+    # Si hay fichas en BAR, intentar mover desde otro punto debe fallar
+    used = {"die": None}
+    dice = SimpleNamespace(
+        available_moves=lambda: [3],
+        roll=lambda: None,
+        use_move=lambda v: used.__setitem__("die", v),
+    )
+    g = _game_with(dice)
+    g.start_turn()
+
+    # Forzamos "hay fichas en BAR"
+    monkeypatch.setattr(g, "_has_bar", lambda color=None: True)
+    # No debería siquiera invocar movimiento: debe lanzar error antes
+    with pytest.raises(GameRuleError):
+        g.apply_player_move(from_pos=6, steps=3)
+    assert used["die"] is None  # no consumió dado
+
+
+def test_high_die_rule_enforced_when_only_high_playable(monkeypatch):
+    # Dos dados (2,5): solo el 5 es jugable → si intenta usar 2, debe fallar
+    used = {"die": None}
+    dice = SimpleNamespace(
+        available_moves=lambda: [2, 5],
+        roll=lambda: None,
+        use_move=lambda v: used.__setitem__("die", v),
+    )
+    g = _game_with(dice)
+    g.start_turn()
+
+    monkeypatch.setattr(g, "_has_bar", lambda color=None: False)
+    # Solo el alto (5) es jugable
+    def _legal(color, steps):
+        return steps == 5
+    monkeypatch.setattr(g, "_legal_single_move_exists", _legal)
+
+    # Intentar con 2 debe explotar por regla del dado más alto
+    with pytest.raises(GameRuleError):
+        g.apply_player_move(from_pos=8, steps=2)
+
+    # Con 5 debe pasar y consumirlo
+    monkeypatch.setattr(g.board, "move_checker", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(g.board, "count_off", lambda color: 0, raising=False)
+    g.apply_player_move(from_pos=8, steps=5)
+    assert used["die"] == 5
+
+
+def test_state_reports_moves_left_and_color(monkeypatch):
+    # state() refleja dice_values y moves_left calculados
+    dice = SimpleNamespace(
+        available_moves=lambda: [6, 3, 3],
+        roll=lambda: None,
+        use_move=lambda v: None,
+    )
+    g = _game_with(dice)
+    g.start_turn()
+
+    # Por las dudas, forzamos _get_available_moves a devolver la misma secuencia
+    monkeypatch.setattr(g, "_get_available_moves", lambda: [6, 3, 3])
+    st = g.state()
+    assert st.current_color == "white"
+    assert tuple(st.dice_values) == (6, 3, 3)
+    assert st.moves_left == 3
+
+
+def test_get_available_moves_accepts_list_attribute():
+    # _get_available_moves debe soportar que dice.available_moves sea una LISTA (no solo callable)
+    class _ListDice:
+        def __init__(self):
+            self.available_moves = [4, 4]
+        def roll(self):  # para start_turn
+            pass
+
+    d = _ListDice()
+    g = _game_with(d)
+    g.start_turn()
+
+    st = g.state()  # usa _get_available_moves
+    assert tuple(st.dice_values) == (4, 4)
+    assert st.moves_left == 2
+
+
+def test_finalize_game_idempotent(monkeypatch):
+    # Llamar _finalize_game dos veces no debe cambiar el resultado inicial (idempotencia)
+    dice = SimpleNamespace(available_moves=lambda: [], roll=lambda: None, use_move=lambda v: None)
+    g = _game_with(dice)
+
+    # Outcome controlado
+    monkeypatch.setattr(g, "_determine_outcome", lambda wc, lc: ("single", 1))
+    # Primera finalización
+    g._finalize_game("white")
+    first = (g.game_over, g.result.winner_color, g.result.outcome, g.result.points)
+
+    # Segunda finalización (no debe modificar)
+    monkeypatch.setattr(g, "_determine_outcome", lambda wc, lc: ("backgammon", 3))
+    g._finalize_game("white")
+    second = (g.game_over, g.result.winner_color, g.result.outcome, g.result.points)
+
+    assert first == second
