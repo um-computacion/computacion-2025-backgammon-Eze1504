@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 from typing import Literal
 from types import SimpleNamespace
+import os
 
 
 Outcome = Literal["single", "gammon", "backgammon"]
@@ -93,7 +94,7 @@ class BackgammonGame:
         """
     Aplica UNA jugada del jugador actual y consume el dado 'steps'.
     Reglas:
-     - Si hay fichas en BAR, sólo se puede mover desde BAR (from_pos == 0).
+     - Si hay fichas en BAR, sólo se puede mover desde BAR (from_pos == self.BAR).
      - 'steps' debe estar disponible en el dice.
      - Motores del Board:
          * from_pos == self.BAR -> reenter_checker(color, steps)
@@ -101,16 +102,18 @@ class BackgammonGame:
     """
         if not self._turn_active:
             raise GameRuleError("No hay turno activo. Llamá a start_turn() primero.")
+
         available = self._get_available_moves()
         if steps not in available:
             raise GameRuleError(f"Dado {steps} no disponible: {available}")
+
         if self._has_bar(self.current_color) and from_pos != self.BAR:
             raise GameRuleError("Debés reingresar desde el BAR antes de mover otras fichas.")
-    
+
         # Regla del dado más alto si quedan exactamente dos valores distintos y solo uno es jugable.
         remaining = self._get_available_moves()
         if len(remaining) == 2 and remaining[0] != remaining[1]:
-            a, b = sorted(remaining)          # a = menor, b = mayor
+            a, b = sorted(remaining)
             can_a = self._legal_single_move_exists(self.current_color, a)
             can_b = self._legal_single_move_exists(self.current_color, b)
             if can_a != can_b:
@@ -120,8 +123,8 @@ class BackgammonGame:
                         f"Debés usar el dado {must_use} al inicio del turno: "
                         "solo uno es jugable y debe ser el más alto."
                     )
-    
-        # 1) Ejecutar UNA acción de movimiento (puede incluir bearing off)
+
+        # 1) Ejecutar el movimiento en el board
         if from_pos == self.BAR:
             self.board.reenter_checker(self.current_color, steps)
         else:
@@ -129,17 +132,26 @@ class BackgammonGame:
                 self.board.move_or_bear_off(self.current_color, from_pos, steps)
             else:
                 self.board.move_checker(self.current_color, from_pos, steps)
-    
-        # 2) Consumir el dado tras un movimiento válido
+
+        # 2) Consumir el dado
         self.dice.use_move(steps)
-    
-         # 3) Verificar victoria después de consumir el dado
-        if self.board.count_checkers(self.current_color).get("off", 0) == 15:
+
+        # 3) Victoria inmediata si no quedan fichas en tablero ni en BAR
+        left = self._remaining_on_board_or_bar(self.current_color)
+        if left == 0:
             self._finalize_game(winner_color=self.current_color)
             return
-    
-        # 4) Re-chequeo de victoria por si el orden del test evalúa luego del consumo
-        self._maybe_finalize_if_won(self.current_color)
+
+        # 4) (Opcional) fallback: si tu Board expone off correctamente y llega a 15, también cerrá.
+        try:
+            if self._get_off_count(self.current_color) == 15:
+                self._finalize_game(winner_color=self.current_color)
+                return
+        except Exception:
+            pass
+
+
+
 
     def end_turn(self) -> None:
         """Termina el turno y alterna el color actual."""
@@ -162,11 +174,7 @@ class BackgammonGame:
             moves_left=len(_av),
         )
 
-    
-    def _maybe_finalize_if_won(self, color: str) -> None:
-        # Si ya no quedan fichas en tablero (15 off), el juego termina ya.
-        if self.board.count_off(color) == 15:
-            self._finalize_game(winner_color=color)
+
 
     def _finalize_game(self, winner_color: str) -> None:
         # early-exit si ya terminó
@@ -260,9 +268,176 @@ class BackgammonGame:
     """
         am = getattr(self.dice, "available_moves")
         return list(am() if callable(am) else am)
+    
 
 
+    def _check_victory_after_move(self, color: str) -> None:
+        """
+    Si 'color' tiene 15 fichas en OFF, termina la partida delegando
+    el armado del resultado a _finalize_game.
+    Estrategia robusta para obtener 'off':
+      1) board.count_off(color)
+      2) board.count_at(OFF, color)
+      3) board.count_checkers(color)['off']
+      4) Deducción: 15 - (en_tablero + en_BAR) usando get_point() / get_checkers_in_bar()
+    """
+        OFF = getattr(self, "OFF", 25)
+        off = None
 
+        # 1) count_off(color)
+        if hasattr(self.board, "count_off"):
+            try:
+                off = self.board.count_off(color)
+            except Exception:
+                off = None
+
+        # 2) count_at(OFF, color)
+        if off is None and hasattr(self.board, "count_at"):
+            try:
+                off = self.board.count_at(OFF, color)
+            except Exception:
+                off = None
+    
+        # 3) count_checkers(color).get("off", 0)
+        if off is None and hasattr(self.board, "count_checkers"):
+            try:
+                off = self.board.count_checkers(color).get("off", 0)
+            except Exception:
+                off = None
+
+        # 4) Deducción: 15 - (en_tablero + en_BAR)
+        if off is None:
+            on_board = 0
+            # usar get_point(p) y filtrar por color
+            if hasattr(self.board, "get_point"):
+                try:
+                    for p in range(1, 25):
+                        stack = self.board.get_point(p) or []
+                        on_board += sum(1 for ch in stack if getattr(ch, "get_color", lambda: None)() == color)
+                except Exception:
+                    on_board = 0
+            # contar en BAR
+            in_bar = 0
+            if hasattr(self.board, "get_checkers_in_bar"):
+                try:
+                    in_bar = len(self.board.get_checkers_in_bar(color) or [])
+                except Exception:
+                    in_bar = 0
+            off = max(0, 15 - (on_board + in_bar))
+
+        if off == 15:
+            self._finalize_game(winner_color=color)
+
+
+    def _get_off_count(self, color: str) -> int:
+        """
+    Cuenta fichas borneadas (OFF) con múltiples estrategias:
+      1) board.count_off(color)
+      2) board.count_at(OFF, color)
+      3) board.count_checkers(color)['off']
+      4) Deducción: 15 - (en_tablero + en_BAR)
+         - en_tablero con get_point() y chequeo de color por atributo .color o método .get_color()
+         - en_BAR con get_checkers_in_bar(color) o count_bar(color)
+    """
+        OFF = getattr(self, "OFF", 25)
+
+        # 1) count_off(color)
+        if hasattr(self.board, "count_off"):
+            try:
+                return int(self.board.count_off(color))
+            except Exception:
+                pass
+    
+        # 2) count_at(OFF, color)
+        if hasattr(self.board, "count_at"):
+            try:
+                return int(self.board.count_at(OFF, color))
+            except Exception:
+                pass
+
+        # 3) count_checkers(color)
+        if hasattr(self.board, "count_checkers"):
+            try:
+                d = self.board.count_checkers(color) or {}
+                if isinstance(d, dict) and "off" in d:
+                    return int(d.get("off", 0))
+            except Exception:
+                pass
+
+    # 4) Deducción
+    # 4a) Fichas en tablero
+        on_board = 0
+        if hasattr(self.board, "get_point"):
+            try:
+                for p in range(1, 25):
+                    stack = self.board.get_point(p) or []
+                    for ch in stack:
+                        # soportar .color (atributo) o .get_color() (método)
+                        ch_color = getattr(ch, "color", None)
+                        if ch_color is None and hasattr(ch, "get_color"):
+                            try:
+                                ch_color = ch.get_color()
+                            except Exception:
+                                ch_color = None
+                        if ch_color == color:
+                            on_board += 1
+            except Exception:
+                on_board = 0
+
+        # 4b) Fichas en BAR
+        in_bar = 0
+        if hasattr(self.board, "get_checkers_in_bar"):
+            try:
+                in_bar = len(self.board.get_checkers_in_bar(color) or [])
+            except Exception:
+                in_bar = 0
+        if in_bar == 0 and hasattr(self.board, "count_bar"):
+            try:
+                in_bar = int(self.board.count_bar(color))
+            except Exception:
+                pass
+
+        off = 15 - (on_board + in_bar)
+        return off if off >= 0 else 0
+
+
+    def _remaining_on_board_or_bar(self, color: str) -> int:
+        """
+    Devuelve cuántas fichas de 'color' quedan en tablero (1..24) + BAR.
+    No depende de count_off / count_at; usa get_point y get_checkers_in_bar / count_bar.
+    """
+        left = 0
+
+    # Contar en tablero 1..24
+        if hasattr(self.board, "get_point"):
+            try:
+                for p in range(1, 25):
+                    stack = self.board.get_point(p) or []
+                    for ch in stack:
+                        ch_color = getattr(ch, "color", None)
+                        if ch_color is None and hasattr(ch, "get_color"):
+                            try:
+                                ch_color = ch.get_color()
+                            except Exception:
+                                ch_color = None
+                        if ch_color == color:
+                            left += 1
+            except Exception:
+                pass
+
+        # Contar en BAR
+        if hasattr(self.board, "get_checkers_in_bar"):
+            try:
+                left += len(self.board.get_checkers_in_bar(color) or [])
+            except Exception:
+                pass
+        elif hasattr(self.board, "count_bar"):
+            try:
+                left += int(self.board.count_bar(color))
+            except Exception:
+                pass
+
+        return left
 
 
 
