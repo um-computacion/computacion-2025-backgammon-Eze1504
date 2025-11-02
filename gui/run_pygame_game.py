@@ -1,31 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Backgammon – Pygame MVP con interacción de mouse
-------------------------------------------------
+Backgammon – Pygame UI completa
+--------------------------------
 - Tablero con 24 puntos, BAR y OFF.
-- Render de fichas por color leyendo el Board (count_at / fallbacks).
-- HUD con dados, turno y ayuda.
+- Render de fichas (white/black), HUD con dados animados, indicador de turno, mensajes de estado.
 - Interacciones:
-    * R: roll/start_turn
-    * H: hint (si existe cli.hint_engine.suggest_move)
-    * E: end_turn
-    * S: save snapshot.json
+    * Botones (HUD): New Game, Roll, End Turn, Hint, Save, Quit
+    * Click en dados o botón Roll: animar tirada y, al finalizar, start_turn()
     * Click izquierdo: seleccionar punto "from" (solo si hay ficha propia)
-    * Drag & drop: al soltar, aplica automáticamente la mejor jugada legal
-      (prioriza dado más alto si corresponde)
-    * Tecla 1..6: mover "from" con steps (si los dados lo permiten)
-    * ESC / cerrar: salir
-
-Requiere:
-    - core.board.Board
-    - core.dice.Dice
-    - core.player.Player
-    - core.game.BackgammonGame
+    * Drag & drop: al soltar, aplica una jugada legal (prioriza dado más alto)
+    * Teclas: R (roll), H (hint), E (end), S (save), 1..6 (mover), ESC (salir)
 """
 
 from __future__ import annotations
 
 import sys
+import time
+import random
 from typing import Optional, Tuple, List
 
 import pygame
@@ -56,46 +47,53 @@ BAR_W = 60
 OFF_W = 80
 POINTS_PER_SIDE = 12
 
-COL_BG   = (22, 24, 29)
-COL_BOARD= (198, 164, 110)
-COL_TRI_A= (184, 146, 94)
-COL_TRI_B= (225, 201, 158)
-COL_BAR  = (60, 62, 68)
-COL_OFF  = (60, 62, 68)
-COL_TEXT = (240, 240, 240)
-COL_HINT = (255, 240, 150)
-COL_WHITE= (245, 245, 245)
-COL_BLACK= (30, 32, 36)
-COL_EDGEW= (200, 200, 200)
-COL_EDGEB= (65, 68, 73)
+COL_BG     = (22, 24, 29)
+COL_BOARD  = (198, 164, 110)
+COL_TRI_A  = (184, 146, 94)
+COL_TRI_B  = (225, 201, 158)
+COL_BAR    = (60, 62, 68)
+COL_OFF    = (60, 62, 68)
+COL_TEXT   = (240, 240, 240)
+COL_HINT   = (255, 240, 150)
+COL_WHITE  = (245, 245, 245)
+COL_BLACK  = (30, 32, 36)
+COL_EDGEW  = (200, 200, 200)
+COL_EDGEB  = (65, 68, 73)
 COL_SELECT = (160, 210, 255)
 
+# Dados
+COL_DIE_FACE   = (245, 245, 245)
+COL_DIE_EDGE   = (205, 205, 205)
+COL_DIE_DOT    = (35, 35, 35)
+COL_DIE_SHADOW = (0, 0, 0, 60)
+
+# Botones
+BTN_BG     = (50, 54, 62)
+BTN_EDGE   = (95, 99, 108)
+BTN_HOVER  = (70, 74, 83)
+BTN_TEXT   = (235, 235, 235)
+BTN_DISABLE= (90, 92, 98)
+
 FPS = 60
-HUD_H = 90
+HUD_H = 100  # un poquito más alto para botones
 
 # Parámetros fichas
 CHECKER_RADIUS = 16
 STACK_SPACING  = 4
-MAX_STACK_RENDER = 5  # si hay más, se muestra +n
+MAX_STACK_RENDER = 5
 
-# Mapeos de posiciones:
-# - Puntos 1..24
-# - BAR = 0, OFF = 25
+# Posiciones especiales
 BAR_POS = 0
 OFF_POS = 25
 
 
 # ------------- Helpers robustos de acceso al Board -------------
 def count_at(board: Board, point: int, color: str) -> int:
-    """Cuenta fichas en 'point' de 'color'. Intenta API conocida y cae a fallbacks."""
-    # API ideal
     if hasattr(board, "count_at"):
         try:
             return int(board.count_at(point, color))
         except Exception:
             pass
-
-    # OFF/BAR como ubicaciones especiales
     if point == OFF_POS:
         for name in ("count_off", "get_off_count", "off_count", "get_off"):
             if hasattr(board, name):
@@ -110,8 +108,6 @@ def count_at(board: Board, point: int, color: str) -> int:
                     return int(getattr(board, name)(color))
                 except Exception:
                     pass
-
-    # Puntos comunes
     for name in ("count_point", "get_count_at", "point_count", "count", "get_count"):
         if hasattr(board, name):
             fn = getattr(board, name)
@@ -124,15 +120,12 @@ def count_at(board: Board, point: int, color: str) -> int:
                     continue
             except Exception:
                 continue
-
-    # Fallback via get_point()
     if hasattr(board, "get_point"):
         try:
             arr = board.get_point(point)
             return sum(1 for ch in arr if getattr(ch, "get_color", lambda: None)() == color)
         except Exception:
             pass
-
     return 0
 
 
@@ -160,13 +153,7 @@ def count_off(board: Board, color: str) -> int:
 
 
 # ------------- Layout del tablero -------------
-def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rect]:
-    """
-    Devuelve:
-      - positions: {point_index: (center_x, is_top, half_rect)}
-      - bar_rect: rect del BAR
-      - off_rect: rect del OFF
-    """
+def build_point_layout(rect: pygame.Rect):
     board_rect = pygame.Rect(rect.left, rect.top + HUD_H, rect.width, rect.height - HUD_H)
 
     total_w = board_rect.width - OFF_W
@@ -177,8 +164,8 @@ def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rec
     points_area_w = panel_rect.width - BAR_W
     col_w = points_area_w // POINTS_PER_SIDE
 
-    cols_left = POINTS_PER_SIDE // 2  # 6
-    cols_right = POINTS_PER_SIDE // 2 # 6
+    cols_left = POINTS_PER_SIDE // 2
+    cols_right = POINTS_PER_SIDE // 2
 
     x0 = panel_rect.left
     xs_left  = [x0 + i * col_w for i in range(cols_left)]
@@ -192,9 +179,7 @@ def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rec
     top_rect = pygame.Rect(panel_rect.left, panel_rect.top, panel_rect.width, half_h)
     bot_rect = pygame.Rect(panel_rect.left, panel_rect.top + half_h, panel_rect.width, half_h)
 
-    # Abajo 1..12 (derecha a izquierda)
     x_cols_bottom = list(reversed(xs_left + xs_right))
-    # Arriba 13..24 (derecha a izquierda)
     x_cols_top = list(reversed(xs_left + xs_right))
 
     for i in range(POINTS_PER_SIDE):
@@ -210,7 +195,7 @@ def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rec
     return positions, bar_rect, off_rect
 
 
-# ------------- Dibujo de tablero, fichas y HUD -------------
+# ------------- Dibujo base -------------
 def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Optional[int], font):
     pygame.draw.rect(surface, COL_BOARD, rect, border_radius=12)
 
@@ -221,17 +206,8 @@ def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Opti
     pygame.draw.rect(surface, COL_BAR, bar_rect)
     pygame.draw.rect(surface, COL_OFF, off_rect)
 
-    used_xs_top = []
-    used_xs_bottom = []
-    for pt in range(13, 25):
-        cx, _, _ = positions[pt]
-        used_xs_top.append(cx)
-    for pt in range(1, 13):
-        cx, _, _ = positions[pt]
-        used_xs_bottom.append(cx)
-
-    used_xs_top.sort()
-    used_xs_bottom.sort()
+    used_xs_top = sorted([positions[pt][0] for pt in range(13, 25)])
+    used_xs_bottom = sorted([positions[pt][0] for pt in range(1, 13)])
 
     def draw_triangles(xs, is_top):
         for i, cx in enumerate(xs):
@@ -249,7 +225,7 @@ def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Opti
     draw_triangles(used_xs_top, True)
     draw_triangles(used_xs_bottom, False)
 
-    # Selección
+    # Selección (resalta la columna)
     highlight = None
     if selected_from is not None:
         if selected_from in positions:
@@ -316,34 +292,146 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board: Board):
     draw_stack_at(OFF_POS, "black")
 
 
-def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg: Optional[str]):
-    pygame.draw.rect(surface, COL_BG, (rect.left, rect.top, rect.width, HUD_H))
+# ------------- HUD + Dados + Botones -------------
+class DiceAnimator:
+    """Controla animación de tirada antes de llamar a start_turn()."""
+    def __init__(self, duration_ms: int = 600):
+        self.duration = duration_ms
+        self.running = False
+        self.start_t = 0.0
+        self.preview = (None, None)  # caras temporales
+
+    def start(self):
+        self.running = True
+        self.start_t = time.time()
+        self.preview = (random.randint(1, 6), random.randint(1, 6))
+
+    def update(self):
+        if not self.running:
+            return
+        elapsed = (time.time() - self.start_t) * 1000.0
+        if elapsed >= self.duration:
+            self.running = False
+        else:
+            # velocidad de cambio decreciente (ease-out)
+            step_ms = max(40, 200 - int(160 * (elapsed / self.duration)))
+            if int(elapsed) % step_ms < 20:
+                self.preview = (random.randint(1, 6), random.randint(1, 6))
+
+    def faces(self) -> Tuple[Optional[int], Optional[int]]:
+        return self.preview
+
+
+def draw_die(surface: pygame.Surface, rect: pygame.Rect, value: Optional[int]):
+    # sombra
+    shadow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow, COL_DIE_SHADOW, shadow.get_rect(), border_radius=8)
+    surface.blit(shadow, (rect.x + 2, rect.y + 3))
+
+    pygame.draw.rect(surface, COL_DIE_FACE, rect, border_radius=10)
+    pygame.draw.rect(surface, COL_DIE_EDGE, rect, width=2, border_radius=10)
+
+    if not value:
+        cx, cy = rect.center
+        w = rect.width * 0.4
+        pygame.draw.line(surface, COL_DIE_DOT, (cx - w/2, cy), (cx + w/2, cy), width=3)
+        return
+
+    cx, cy = rect.center
+    off = rect.width * 0.22
+    dots = {
+        1: [(cx, cy)],
+        2: [(cx - off, cy - off), (cx + off, cy + off)],
+        3: [(cx - off, cy - off), (cx, cy), (cx + off, cy + off)],
+        4: [(cx - off, cy - off), (cx + off, cy - off), (cx - off, cy + off), (cx + off, cy + off)],
+        5: [(cx - off, cy - off), (cx + off, cy - off), (cx, cy), (cx - off, cy + off), (cx + off, cy + off)],
+        6: [(cx - off, cy - off), (cx + off, cy - off), (cx - off, cy), (cx + off, cy),
+            (cx - off, cy + off), (cx + off, cy + off)],
+    }
+    r = int(rect.width * 0.09)
+    for (x, y) in dots[int(value)]:
+        pygame.draw.circle(surface, COL_DIE_DOT, (int(x), int(y)), r)
+
+
+class Button:
+    def __init__(self, rect: pygame.Rect, label: str, action: str):
+        self.rect = rect
+        self.label = label
+        self.action = action
+        self.hover = False
+        self.disabled = False
+
+    def draw(self, surface: pygame.Surface, font: pygame.font.Font):
+        bg = BTN_DISABLE if self.disabled else (BTN_HOVER if self.hover else BTN_BG)
+        pygame.draw.rect(surface, bg, self.rect, border_radius=8)
+        pygame.draw.rect(surface, BTN_EDGE, self.rect, width=2, border_radius=8)
+        t = font.render(self.label, True, BTN_TEXT if not self.disabled else (200, 200, 200))
+        surface.blit(t, (self.rect.centerx - t.get_width() // 2, self.rect.centery - t.get_height() // 2))
+
+    def handle_event(self, ev: pygame.event.Event) -> Optional[str]:
+        if self.disabled:
+            return None
+        if ev.type == pygame.MOUSEMOTION:
+            self.hover = self.rect.collidepoint(ev.pos)
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if self.rect.collidepoint(ev.pos):
+                return self.action
+        return None
+
+
+def draw_turn_indicator(surface, area: pygame.Rect, game: BackgammonGame, font: pygame.font.Font):
+    """Muestra el color del turno con un chip y texto."""
     st = game.state()
-    turn = getattr(st, "current_color", "white")
-    dice_vals = getattr(st, "dice_values", [])
-    moves_left = getattr(st, "moves_left", 0)
+    color = getattr(st, "current_color", "white")
+    chip_color = COL_WHITE if color == "white" else COL_BLACK
+    chip_edge  = COL_EDGEW if color == "white" else COL_EDGEB
+    cx = area.left + 16 + CHECKER_RADIUS
+    cy = area.top + HUD_H // 2
+    pygame.draw.circle(surface, chip_color, (cx, cy), CHECKER_RADIUS + 2)
+    pygame.draw.circle(surface, chip_edge, (cx, cy), CHECKER_RADIUS + 2, 2)
+    label = f"Turno: {color}"
+    t = font.render(label, True, COL_TEXT)
+    surface.blit(t, (cx + CHECKER_RADIUS + 10, cy - t.get_height() // 2))
 
-    label = f"Turno: {turn} | Dados: {tuple(dice_vals) if dice_vals else '—'} (movs: {moves_left})"
-    txt = font.render(label, True, COL_TEXT)
-    surface.blit(txt, (rect.left + 12, rect.top + 12))
 
-    help_line = "R: roll  |  1-6: mover desde seleccionado  |  Click/Drag: seleccionar/mover  |  H: hint  |  E: end  |  S: save  |  ESC: salir"
+def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small,
+                      hint_msg: Optional[str],
+                      die_rects: Tuple[pygame.Rect, pygame.Rect],
+                      anim: DiceAnimator,
+                      buttons: List[Button]):
+    # barra HUD
+    hud_rect = pygame.Rect(rect.left, rect.top, rect.width, HUD_H)
+    pygame.draw.rect(surface, COL_BG, hud_rect)
+
+    # Indicador de turno
+    turn_area = pygame.Rect(hud_rect.left + 10, hud_rect.top, 250, HUD_H)
+    draw_turn_indicator(surface, turn_area, game, font)
+
+    # Línea de ayuda
+    help_line = "Click/Drag: mover | 1-6: paso | H: hint | E: end | S: save | ESC: salir"
     txt2 = small.render(help_line, True, (210, 210, 210))
-    surface.blit(txt2, (rect.left + 12, rect.top + 46))
+    surface.blit(txt2, (turn_area.left, hud_rect.bottom - txt2.get_height() - 8))
 
-    # Dados como cajitas simples (display de 2 valores)
-    die_w = 54
-    dpad = 10
-    x0 = rect.right - (die_w * 2 + dpad) - 16
-    y0 = rect.top + 12
-    for i in range(2):
-        r = pygame.Rect(x0 + i * (die_w + dpad), y0, die_w, die_w)
-        pygame.draw.rect(surface, (220, 220, 220), r, border_radius=6)
-        val = dice_vals[i] if (dice_vals and len(dice_vals) > i) else None
-        t = font.render(str(val) if val else "-", True, (10, 10, 10))
-        surface.blit(t, (r.centerx - t.get_width() // 2, r.centery - t.get_height() // 2))
+    # Dados
+    r1, r2 = die_rects
+    st = game.state()
+    dice_vals = list(getattr(st, "dice_values", []))
+    while len(dice_vals) < 2:
+        dice_vals.append(None)
 
-    # Overlay de hint si existe
+    if anim.running:
+        f1, f2 = anim.faces()
+        draw_die(surface, r1, f1)
+        draw_die(surface, r2, f2)
+    else:
+        draw_die(surface, r1, dice_vals[0])
+        draw_die(surface, r2, dice_vals[1])
+
+    # Botones
+    for b in buttons:
+        b.draw(surface, small)
+
+    # Overlay hint
     if hint_msg:
         pad = 12
         lines = []
@@ -401,7 +489,6 @@ def _own_checker_on(board: Board, point: int, color: str) -> bool:
 
 
 def _get_available_moves(game: BackgammonGame) -> List[int]:
-    """Robusto acceso a dados disponibles."""
     if hasattr(game, "_get_available_moves"):
         try:
             return list(getattr(game, "_get_available_moves")())
@@ -419,16 +506,10 @@ def _get_available_moves(game: BackgammonGame) -> List[int]:
 
 
 def _legal_steps_from(game: BackgammonGame, from_pos: int) -> List[int]:
-    """
-    Devuelve qué valores de dado (steps) son LEGALES desde 'from_pos' para el color actual.
-    No muta el estado. Tolera boards sin todos los validadores (hace best-effort).
-    """
     color = game.current_color
     dice_vals = _get_available_moves(game)
     if not dice_vals:
         return []
-
-    # ¿Hay fichas en BAR?
     try:
         has_bar = bool(game.board.get_checkers_in_bar(color))
     except Exception:
@@ -442,30 +523,24 @@ def _legal_steps_from(game: BackgammonGame, from_pos: int) -> List[int]:
         try:
             if has_bar and from_pos != BAR_POS:
                 continue
-            # Reingreso
             if from_pos == BAR_POS and hasattr(game.board, "validate_reentry"):
                 game.board.validate_reentry(color, steps)
                 legal.append(steps)
                 continue
-            # Movimiento básico
             if hasattr(game.board, "validate_basic_move"):
                 game.board.validate_basic_move(color, from_pos, steps)
                 legal.append(steps)
                 continue
-            # Bearing off
             if hasattr(game.board, "can_bear_off_from") and game.board.can_bear_off_from(color, from_pos, steps):
                 legal.append(steps)
                 continue
-            # Último recurso: permitimos el intento y que falle en apply si no corresponde
             legal.append(steps)
         except Exception:
             pass
-
     return sorted(legal)
 
 
 def draw_legal_badges(surface, font_small, positions, selected_from: int, legal_steps: List[int]):
-    """Burbujas sobre el punto seleccionado con steps legales. Rojo si no hay jugadas."""
     if selected_from not in positions:
         return
     cx, is_top, area = positions[selected_from]
@@ -489,8 +564,8 @@ def draw_legal_badges(surface, font_small, positions, selected_from: int, legal_
         bw = t.get_width() + 16
         box = pygame.Rect(x, 0, bw, t.get_height() + 8)
         box.centery = y
-        pygame.draw.rect(surface, (160, 215, 120), box, border_radius=12)         # verde suave
-        pygame.draw.rect(surface, (30, 80, 30), box, width=2, border_radius=12)   # borde
+        pygame.draw.rect(surface, (160, 215, 120), box, border_radius=12)
+        pygame.draw.rect(surface, (30, 80, 30), box, width=2, border_radius=12)
         surface.blit(t, (box.left + 8, box.top + 4))
         x += bw + gap
 
@@ -527,11 +602,110 @@ def main():
     drag_from: Optional[int] = None
     mouse_x = mouse_y = 0
 
+    # Dados (HUD derecha)
+    die_w = 60
+    dpad = 12
+    dice_x0 = root_rect.right - (die_w * 2 + dpad) - 20
+    dice_y0 = root_rect.top + 16
+    die_rects = (
+        pygame.Rect(dice_x0, dice_y0, die_w, die_w),
+        pygame.Rect(dice_x0 + die_w + dpad, dice_y0, die_w, die_w),
+    )
+
+    # Botones (HUD centro-derecha)
+    btn_font = small
+    btn_w, btn_h, btn_gap = 110, 30, 8
+    btn_y = root_rect.top + 60
+    btn_labels = [("New Game", "new"), ("Roll", "roll"), ("End Turn", "end"),
+                  ("Hint", "hint"), ("Save", "save"), ("Quit", "quit")]
+    buttons: List[Button] = []
+    bx = dice_x0 - (btn_w + btn_gap) * len(btn_labels) - 20
+    for label, action in btn_labels:
+        r = pygame.Rect(bx, btn_y, btn_w, btn_h)
+        buttons.append(Button(r, label, action))
+        bx += btn_w + btn_gap
+
+    # Animador de dados
+    anim = DiceAnimator(duration_ms=600)
+    pending_roll = False
+
     running = True
     while running:
         dt = clock.tick(FPS)
 
+        # actualizar animación
+        if anim.running:
+            anim.update()
+            if not anim.running and pending_roll:
+                try:
+                    game.start_turn()
+                    st = game.state()
+                    last_msg = f"Turno {getattr(st, 'current_color', 'white')} – Dados: {tuple(getattr(st, 'dice_values', []))}"
+                except BackgammonException as ex:
+                    last_msg = str(ex)
+                pending_roll = False
+
+        # Update hover de botones por defecto
+        mx, my = pygame.mouse.get_pos()
+        for b in buttons:
+            b.hover = b.rect.collidepoint(mx, my)
+
         for ev in pygame.event.get():
+            # Botones
+            for b in buttons:
+                action = b.handle_event(ev)
+                if action:
+                    if action == "new":
+                        game = init_game()
+                        selected_from = None
+                        dragging = False
+                        drag_from = None
+                        hint_overlay = None
+                        last_msg = "Nueva partida."
+                    elif action == "roll":
+                        if not anim.running:
+                            anim.start()
+                            pending_roll = True
+                            hint_overlay = None
+                    elif action == "end":
+                        try:
+                            game.end_turn()
+                            st = game.state()
+                            last_msg = f"Turno finalizado. Ahora {getattr(st, 'current_color', 'white')}."
+                            hint_overlay = None
+                        except BackgammonException as ex:
+                            last_msg = str(ex)
+                    elif action == "hint":
+                        try:
+                            hint_overlay = suggest_move(game)
+                            last_msg = "Sugerencia generada."
+                        except Exception as ex:
+                            hint_overlay = None
+                            last_msg = str(ex)
+                    elif action == "save":
+                        import json
+                        from dataclasses import asdict, is_dataclass
+                        st = game.state()
+
+                        def _to_dict(obj):
+                            if is_dataclass(obj):
+                                return asdict(obj)
+                            if isinstance(obj, (list, tuple)):
+                                return list(obj)
+                            if hasattr(obj, "__dict__"):
+                                return dict(vars(obj))
+                            return obj
+
+                        payload = {"state": _to_dict(st)}
+                        result = getattr(game, "result", None)
+                        if result is not None:
+                            payload["result"] = _to_dict(result)
+                        with open("snapshot.json", "w", encoding="utf-8") as f:
+                            json.dump(payload, f, ensure_ascii=False, indent=2)
+                        last_msg = "Partida guardada en snapshot.json"
+                    elif action == "quit":
+                        running = False
+
             if ev.type == pygame.QUIT:
                 running = False
 
@@ -539,13 +713,10 @@ def main():
                 if ev.key == pygame.K_ESCAPE:
                     running = False
                 elif ev.key == pygame.K_r:
-                    try:
-                        game.start_turn()
-                        st = game.state()
-                        last_msg = f"Turno {getattr(st, 'current_color', 'white')} – Dados: {tuple(getattr(st, 'dice_values', []))}"
+                    if not anim.running:
+                        anim.start()
+                        pending_roll = True
                         hint_overlay = None
-                    except BackgammonException as ex:
-                        last_msg = str(ex)
                 elif ev.key == pygame.K_h:
                     try:
                         hint_overlay = suggest_move(game)
@@ -593,13 +764,22 @@ def main():
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = ev.pos
                 mouse_x, mouse_y = mx, my
+
+                # Click en dados → animación
+                if die_rects[0].collidepoint(mx, my) or die_rects[1].collidepoint(mx, my):
+                    if not anim.running:
+                        anim.start()
+                        pending_roll = True
+                        hint_overlay = None
+                    continue
+
+                # Selección / drag si clic en un punto válido
                 pt = screen_to_point(mx, my, positions, bar_rect, off_rect)
                 if pt is not None:
-                    # solo seleccionar si hay ficha propia (o si clickeás BAR/OFF)
+                    # permitir seleccionar BAR/OFF por conveniencia (aunque no muevan)
                     if _own_checker_on(game.board, pt, game.current_color) or (pt in (BAR_POS, OFF_POS)):
                         selected_from = pt
                         last_msg = f"Origen seleccionado: {('BAR' if pt == BAR_POS else ('OFF' if pt == OFF_POS else pt))}"
-                        # iniciar drag
                         dragging = True
                         drag_from = pt
                     else:
@@ -615,7 +795,6 @@ def main():
                     if not legal:
                         last_msg = "No hay jugadas disponibles desde ese punto."
                     else:
-                        # Si hay varias, elegimos el dado más alto (regla común).
                         chosen = max(legal)
                         last_msg = try_move(game, drag_from, chosen)
                         hint_overlay = None
@@ -626,7 +805,7 @@ def main():
         screen.fill(COL_BG)
         draw_board(screen, root_rect, positions, bar_rect, off_rect, selected_from, font)
         draw_checkers(screen, positions, bar_rect, off_rect, game.board)
-        draw_dice_and_hud(screen, root_rect, game, font, small, hint_overlay)
+        draw_dice_and_hud(screen, root_rect, game, font, small, hint_overlay, die_rects, anim, buttons)
 
         # Badges de validación
         font_badge = pygame.font.SysFont("arial", 16)
@@ -641,10 +820,11 @@ def main():
             pygame.draw.circle(screen, fill, (mouse_x, mouse_y), CHECKER_RADIUS)
             pygame.draw.circle(screen, edge, (mouse_x, mouse_y), CHECKER_RADIUS, 2)
 
-        # Mensaje de estado
+        # Mensaje de estado (barra inferior)
         if last_msg:
+            msg_rect = pygame.Rect(MARGIN, H - 28, W - 2 * MARGIN, 24)
             t = small.render(last_msg, True, (220, 220, 220))
-            screen.blit(t, (MARGIN, H - t.get_height() - 8))
+            screen.blit(t, (msg_rect.left, msg_rect.top))
 
         pygame.display.flip()
 
