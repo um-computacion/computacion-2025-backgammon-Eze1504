@@ -5,7 +5,7 @@ Pygame UI – Backgammon MVP
 - Render de fichas por color (white/black) leyendo Board.count_at(pos, color).
 - HUD con dados, turno y ayuda.
 - Interacciones mínimas:
-    * R: roll
+    * R: roll (start_turn)
     * H: hint (overlay)
     * E: end turn
     * S: save snapshot.json
@@ -20,9 +20,10 @@ Requiere:
     - cli.hint_engine.suggest_move (opcional)
 """
 
-import pygame
 import sys
 from typing import Optional, Tuple
+
+import pygame
 
 from core.board import Board
 from core.dice import Dice
@@ -34,7 +35,14 @@ from core.exceptions import (
     NoMovesAvailableException,
     DiceNotRolledException,
 )
-from cli.hint_engine import suggest_move
+
+# hint opcional (no rompe si no existe)
+try:
+    from cli.hint_engine import suggest_move  # type: ignore
+except Exception:  # pragma: no cover
+    def suggest_move(game):  # fallback mínimo
+        return "Hint no disponible (módulo opcional ausente)."
+
 
 # ----------- Config visual -----------
 W, H = 1100, 700
@@ -43,6 +51,7 @@ BOARD_W, BOARD_H = W - 2 * MARGIN, H - 2 * MARGIN
 BAR_W = 60
 OFF_W = 80
 POINTS_PER_SIDE = 12
+
 COL_BG = (32, 30, 28)
 COL_BOARD = (184, 145, 104)
 COL_TRI_A = (110, 78, 52)
@@ -56,16 +65,51 @@ COL_BLACK = (25, 25, 25)
 COL_SELECT = (160, 210, 255)
 
 FPS = 60
-MAX_STACK_RENDER = 5  # apilar hasta N visibles (igual que el ASCII)
+HUD_H = 90
 CHECKER_RADIUS = 20
 CHECKER_PAD = 6
-HUD_H = 90
+MAX_STACK_RENDER = 5  # apilar hasta N visibles (como el ASCII)
 
-# Mapeos de posiciones:
-# - Puntos 1..24
-# - BAR = 0, OFF = 25
+# Posiciones especiales
 BAR_POS = 0
 OFF_POS = 25
+
+
+# ----------- Helpers de Board tolerantes a distintas APIs -----------
+def count_at(board, point, color):
+    """
+    Devuelve cantidad de fichas de 'color' en 'point'.
+    Prioriza count_point / count_at; fallback con get_point.
+    """
+    if hasattr(board, "count_point"):
+        return board.count_point(point, color)
+    if hasattr(board, "count_at"):
+        return board.count_at(point, color)
+    if hasattr(board, "get_point"):
+        try:
+            return sum(1 for ch in board.get_point(point) if ch.get_color() == color)
+        except Exception:
+            return 0
+    return 0
+
+
+def count_bar(board, color):
+    if hasattr(board, "count_bar"):
+        return board.count_bar(color)
+    if hasattr(board, "get_checkers_in_bar"):
+        try:
+            return len(board.get_checkers_in_bar(color))
+        except Exception:
+            return 0
+    # Fallback común: BAR = 0
+    return count_at(board, BAR_POS, color)
+
+
+def count_off(board, color):
+    if hasattr(board, "count_off"):
+        return board.count_off(color)
+    # Fallback común: OFF = 25
+    return count_at(board, OFF_POS, color)
 
 
 def init_game() -> BackgammonGame:
@@ -76,96 +120,43 @@ def init_game() -> BackgammonGame:
     game = BackgammonGame(board, dice, (white, black), starting_color=white.color)
     return game
 
-# --- Shim de compatibilidad para Board ---
-def board_count_at(board, point, color):
-    """
-    Devuelve la cantidad de fichas de 'color' en 'point' adaptándose a la API del Board.
-    Convenciones: BAR = 0, OFF = 25.
-    """
-    # Si existe la API ideal, usala.
-    if hasattr(board, "count_at"):
-        try:
-            return board.count_at(point, color)
-        except Exception:
-            pass
-
-    # OFF (25)
-    if point == OFF_POS:
-        for name in ("count_off", "get_off_count", "off_count", "get_off"):
-            if hasattr(board, name):
-                return getattr(board, name)(color)
-
-    # BAR (0)
-    if point == BAR_POS:
-        for name in ("count_bar", "get_bar_count", "bar_count", "get_bar"):
-            if hasattr(board, name):
-                return getattr(board, name)(color)
-
-    # Puntos 1..24 — intentos comunes
-    for name in ("get_count_at", "point_count", "count_point", "count", "get_count"):
-        if hasattr(board, name):
-            try:
-                return getattr(board, name)(point, color)
-            except TypeError:
-                # Algunos métodos podrían tener la firma invertida (color, point)
-                try:
-                    return getattr(board, name)(color, point)
-                except Exception:
-                    pass
-
-    # Si no encontramos nada, devolvemos 0 para no romper el render.
-    return 0
-
 
 def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rect]:
     """
     Devuelve:
-      - dict positions: {point_index: center_x_list_and_direction}
-        Donde cada punto tendrá (x_center, is_top) y la columna x para ese triángulo.
-      - rect del BAR
-      - rect del OFF
+      - positions: {point_index: (center_x, is_top, half_rect)}
+      - bar_rect
+      - off_rect
     """
     # Área del tablero sin HUD:
     board_rect = pygame.Rect(rect.left, rect.top + HUD_H, rect.width, rect.height - HUD_H)
-    # Distribución: [6 puntos] [BAR] [6 puntos]  arriba y abajo
     # OFF a la derecha
-    total_w = board_rect.width - OFF_W
-    panel_rect = pygame.Rect(board_rect.left, board_rect.top, total_w, board_rect.height)
     off_rect = pygame.Rect(board_rect.right - OFF_W, board_rect.top, OFF_W, board_rect.height)
+    panel_rect = pygame.Rect(board_rect.left, board_rect.top, board_rect.width - OFF_W, board_rect.height)
 
-    # Dentro del panel: 12 puntos arriba, 12 abajo con BAR en el centro
-    # 12 puntos → 6 + BAR + 6
-    # cada punto es una "columna"
+    # Dentro del panel: 12 puntos arriba, 12 abajo con BAR en el centro (6 + BAR + 6)
     cols_left = POINTS_PER_SIDE // 2  # 6
     cols_right = POINTS_PER_SIDE // 2  # 6
 
-    # ancho útil para 12 puntos + BAR
     bar_rect = pygame.Rect(0, 0, BAR_W, panel_rect.height)
     points_area_w = panel_rect.width - BAR_W
     col_w = points_area_w // POINTS_PER_SIDE
 
-    # Coordenadas X para columnas:
     x0 = panel_rect.left
     xs_left = [x0 + i * col_w for i in range(cols_left)]                  # 0..5
     x_bar = x0 + cols_left * col_w                                       # BAR
     xs_right = [x_bar + BAR_W + i * col_w for i in range(cols_right)]    # 0..5 a derecha
     bar_rect.topleft = (x_bar, panel_rect.top)
 
-    # Triángulos (puntos). Puntos 1..12 abajo de derecha a izquierda; 13..24 arriba de derecha a izquierda
-    # Vamos a mapear un "center_x" por punto y si es top/bottom
+    # Triángulos/puntos:
     positions = {}
+    x_cols_bottom = list(reversed(xs_left + xs_right))  # abajo 1..12 (derecha→izquierda)
+    x_cols_top = list(reversed(xs_left + xs_right))     # arriba 13..24 (derecha→izquierda)
 
-    # Abajo (puntos 1..12) – derecha a izquierda: 12 columnas (6 derecha, 6 izquierda)
-    x_cols_bottom = list(reversed(xs_left + xs_right))  # de derecha a izquierda
-    # Arriba (puntos 13..24) – derecha a izquierda
-    x_cols_top = list(reversed(xs_left + xs_right))
-
-    # Alto de cada mitad (top/bottom)
     half_h = panel_rect.height // 2
     top_rect = pygame.Rect(panel_rect.left, panel_rect.top, panel_rect.width, half_h)
     bot_rect = pygame.Rect(panel_rect.left, panel_rect.top + half_h, panel_rect.width, half_h)
 
-    # Guardamos center_x para cada punto y si es top
     for i in range(POINTS_PER_SIDE):  # 0..11
         # abajo: puntos 1..12
         pt_idx_bottom = i + 1
@@ -177,37 +168,32 @@ def build_point_layout(rect: pygame.Rect) -> Tuple[dict, pygame.Rect, pygame.Rec
         cx_t = x_cols_top[i] + col_w // 2
         positions[pt_idx_top] = (cx_t, True, top_rect)
 
-    # Ajustar bar_rect a panel
     bar_rect = pygame.Rect(x_bar, panel_rect.top, BAR_W, panel_rect.height)
-
     return positions, bar_rect, off_rect
 
 
 def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Optional[int], font):
-    # Fondo de tablero
-    pygame.draw.rect(surface, COL_BOARD, rect, border_radius=12)
+    # Fondo tablero
+    pygame.draw.rect(surface, COL_BOARD, (rect.left, rect.top + HUD_H, rect.width, rect.height - HUD_H), border_radius=12)
 
     # Mitades:
     half_h = (rect.height - HUD_H) // 2
     top = pygame.Rect(rect.left, rect.top + HUD_H, rect.width, half_h)
     bottom = pygame.Rect(rect.left, rect.top + HUD_H + half_h, rect.width, half_h)
-    # Bar y Off vienen de build_point_layout
-    # Pintar BAR y OFF
+
+    # BAR y OFF
     pygame.draw.rect(surface, COL_BAR, bar_rect)
     pygame.draw.rect(surface, COL_OFF, off_rect)
 
-    # Triángulos alternados arriba/abajo usando positions
-    # Tomamos las columnas únicas por X
-    used_xs_top = []
-    used_xs_bottom = []
+    # Triángulos alternados arriba/abajo
+    used_xs_top, used_xs_bottom = [], []
     for pt in range(13, 25):
-        cx, is_top, _ = positions[pt]
+        cx, _, _ = positions[pt]
         used_xs_top.append(cx)
     for pt in range(1, 13):
-        cx, is_top, _ = positions[pt]
+        cx, _, _ = positions[pt]
         used_xs_bottom.append(cx)
 
-    # Ordenar por X para alternar colores
     used_xs_top.sort()
     used_xs_bottom.sort()
 
@@ -227,10 +213,10 @@ def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Opti
     draw_triangles(used_xs_top, True)
     draw_triangles(used_xs_bottom, False)
 
-    # Selección de origen (from)
+    # Selección de origen
     if selected_from is not None:
         if selected_from in positions:
-            cx, is_top, area = positions[selected_from]
+            cx, _, area = positions[selected_from]
             highlight = pygame.Rect(cx - 34, area.top, 68, area.height)
         elif selected_from == BAR_POS:
             highlight = bar_rect.inflate(-6, -6)
@@ -249,11 +235,14 @@ def draw_board(surface, rect, positions, bar_rect, off_rect, selected_from: Opti
 
 
 def draw_checkers(surface, positions, bar_rect, off_rect, board):
-    # Dibuja stacks para cada punto (cap MAX_STACK_RENDER visual)
+    """Dibuja stacks para cada punto + BAR + OFF."""
     def draw_stack_at(point, color):
-        count = board_count_at(board, point, color)
+        count = count_at(board, point, color) if point not in (BAR_POS, OFF_POS) else (
+            count_bar(board, color) if point == BAR_POS else count_off(board, color)
+        )
         if count <= 0:
             return
+
         if point in positions:
             cx, is_top, area = positions[point]
             for i in range(min(count, MAX_STACK_RENDER)):
@@ -264,6 +253,13 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board):
                 fill = COL_WHITE if color == "white" else COL_BLACK
                 pygame.draw.circle(surface, fill, (cx, cy), CHECKER_RADIUS)
                 pygame.draw.circle(surface, (0, 0, 0), (cx, cy), CHECKER_RADIUS, 2)
+
+            # contador +n
+            if count > MAX_STACK_RENDER:
+                font = pygame.font.SysFont(None, 16)
+                txt = font.render(f"+{count - MAX_STACK_RENDER}", True, (255, 255, 255))
+                surface.blit(txt, (cx - txt.get_width() // 2, area.centery - txt.get_height() // 2))
+
         elif point == BAR_POS:
             cx = bar_rect.centerx
             top = bar_rect.top + 40
@@ -281,14 +277,15 @@ def draw_checkers(surface, positions, bar_rect, off_rect, board):
                 pygame.draw.circle(surface, fill, (cx, cy), CHECKER_RADIUS)
                 pygame.draw.circle(surface, (0, 0, 0), (cx, cy), CHECKER_RADIUS, 2)
 
+    # puntos
     for pt in range(1, 25):
         draw_stack_at(pt, "white")
         draw_stack_at(pt, "black")
+    # bar/off
     draw_stack_at(BAR_POS, "white")
     draw_stack_at(BAR_POS, "black")
     draw_stack_at(OFF_POS, "white")
     draw_stack_at(OFF_POS, "black")
-
 
 
 def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg: Optional[str]):
@@ -306,7 +303,7 @@ def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg
     txt2 = small.render(help_line, True, (210, 210, 210))
     surface.blit(txt2, (rect.left + 12, rect.top + 46))
 
-    # Dados como cajitas simples
+    # Dados (dos casillas)
     die_w = 54
     dpad = 10
     x0 = rect.right - (die_w * 2 + dpad) - 16
@@ -318,14 +315,12 @@ def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg
         t = font.render(str(val) if val else "-", True, (10, 10, 10))
         surface.blit(t, (r.centerx - t.get_width() // 2, r.centery - t.get_height() // 2))
 
-    # Overlay de hint si existe
+    # Overlay de hint
     if hint_msg:
         pad = 12
         lines = []
-        # envolver mensaje
         chunk = hint_msg
         if len(chunk) > 90:
-            # división rústica
             mid = len(chunk) // 2
             lines = [chunk[:mid], chunk[mid:]]
         else:
@@ -343,13 +338,13 @@ def draw_dice_and_hud(surface, rect, game: BackgammonGame, font, small, hint_msg
 
 
 def screen_to_point(mx, my, positions, bar_rect, off_rect) -> Optional[int]:
-    # Click dentro de bar?
+    # Click en bar/off?
     if bar_rect.collidepoint(mx, my):
         return BAR_POS
     if off_rect.collidepoint(mx, my):
         return OFF_POS
-    # Buscar el punto más cercano por columna
-    for pt, (cx, is_top, area) in positions.items():
+    # Buscar el punto por columna
+    for pt, (cx, _is_top, area) in positions.items():
         col_rect = pygame.Rect(cx - 30, area.top, 60, area.height)
         if col_rect.collidepoint(mx, my):
             return pt
@@ -357,7 +352,7 @@ def screen_to_point(mx, my, positions, bar_rect, off_rect) -> Optional[int]:
 
 
 def try_move(game: BackgammonGame, from_pos: int, steps: int) -> str:
-    # Ejecutar un movimiento y devolver mensaje corto
+    """Ejecutar un movimiento y devolver mensaje corto."""
     try:
         game.apply_player_move(from_pos, steps)
         st = game.state()
@@ -368,7 +363,7 @@ def try_move(game: BackgammonGame, from_pos: int, steps: int) -> str:
         return str(ex)
     except BackgammonException as ex:
         return str(ex)
-    except Exception as ex:
+    except Exception as ex:  # fallback defensivo
         return str(ex)
 
 
@@ -390,15 +385,17 @@ def main():
 
     running = True
     while running:
-        dt = clock.tick(FPS)
+        _dt = clock.tick(FPS)
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 running = False
+
             elif ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE:
                     running = False
+
                 elif ev.key == pygame.K_r:
-                    # roll
+                    # roll / start_turn
                     try:
                         game.start_turn()
                         st = game.state()
@@ -406,6 +403,7 @@ def main():
                         hint_overlay = None
                     except BackgammonException as ex:
                         last_msg = str(ex)
+
                 elif ev.key == pygame.K_h:
                     # hint
                     try:
@@ -414,6 +412,7 @@ def main():
                     except Exception as ex:
                         hint_overlay = None
                         last_msg = str(ex)
+
                 elif ev.key == pygame.K_e:
                     # end turn
                     try:
@@ -423,8 +422,9 @@ def main():
                         hint_overlay = None
                     except BackgammonException as ex:
                         last_msg = str(ex)
+
                 elif ev.key == pygame.K_s:
-                    # save
+                    # save snapshot.json
                     import json
                     from dataclasses import asdict, is_dataclass
                     st = game.state()
@@ -445,15 +445,16 @@ def main():
                     with open("snapshot.json", "w", encoding="utf-8") as f:
                         json.dump(payload, f, ensure_ascii=False, indent=2)
                     last_msg = "Partida guardada en snapshot.json"
+
                 elif pygame.K_1 <= ev.key <= pygame.K_6:
-                    # intentar move
+                    # intentar mover
                     steps = ev.key - pygame.K_0
                     if selected_from is None:
                         last_msg = "Seleccioná primero un punto de origen con el mouse."
                     else:
                         last_msg = try_move(game, selected_from, steps)
                         hint_overlay = None
-                # otras teclas: ignorar
+
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = ev.pos
                 pt = screen_to_point(mx, my, positions, bar_rect, off_rect)
@@ -471,6 +472,18 @@ def main():
         if last_msg:
             t = small.render(last_msg, True, (220, 220, 220))
             screen.blit(t, (MARGIN, H - t.get_height() - 8))
+
+        # Game over overlay (suave)
+        if getattr(game, "game_over", False):
+            overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 120))
+            screen.blit(overlay, (0, 0))
+            msg = "¡Juego terminado!"
+            if getattr(game, "result", None):
+                r = game.result
+                msg = f"Ganó {getattr(r, 'winner_color', 'white')} – {getattr(r, 'outcome', '')} ({getattr(r, 'points', 0)} pts)"
+            t = font.render(msg, True, (255, 240, 160))
+            screen.blit(t, (W // 2 - t.get_width() // 2, H // 2 - t.get_height() // 2))
 
         pygame.display.flip()
 
