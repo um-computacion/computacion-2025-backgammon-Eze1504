@@ -85,6 +85,19 @@ class Dice:
         return self._available_moves.copy()
     
     @property
+    def has_moves(self) -> bool:
+        """
+        True si quedan movimientos disponibles. Soporta tanto
+        available_moves como método o como atributo lista.
+        """
+        am = getattr(self, "available_moves", None)
+        if am is None:
+            return False
+        moves = am() if callable(am) else am
+        try:
+            return len(moves) > 0
+        except Exception:
+            return bool(moves)
     def used_moves(self) -> List[int]:
         """
         Obtiene los movimientos ya utilizados.

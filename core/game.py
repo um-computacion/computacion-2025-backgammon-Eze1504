@@ -17,9 +17,10 @@ class GameResult:
     points: int
 
 
-class GameRuleError(ValueError):
-    """Excepción para violaciones de reglas a nivel juego (flujo de turno, dados, BAR)."""
+from core.exceptions import BackgammonException
 
+class GameRuleError(BackgammonException):
+    """Excepción ..."""
 @dataclass(frozen=True)
 class TurnState:
     current_color: str
@@ -153,16 +154,30 @@ class BackgammonGame:
 
 
 
+    
     def end_turn(self) -> None:
-        """Termina el turno y alterna el color actual."""
         if not self._turn_active:
             raise GameRuleError("No hay turno activo para terminar.")
-        # Regla: no podés terminar si aún quedan dados jugables
-        if self.dice.has_moves() and self._any_legal_move_exists_for_any_die(self.current_color):
-            raise GameRuleError("Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno.")
-        # cerrar turno y alternar
+
+        #  Fallback robusto: si Dice no tiene has_moves(), calculamos desde available_moves
+        if hasattr(self.dice, "has_moves") and callable(getattr(self.dice, "has_moves")):
+            dice_has_moves = self.dice.has_moves()
+        else:
+            try:
+                am = getattr(self.dice, "available_moves")
+                moves = am() if callable(am) else am
+                dice_has_moves = bool(moves)
+            except Exception:
+                dice_has_moves = False
+
+        if dice_has_moves and self._any_legal_move_exists_for_any_die(self.current_color):
+            raise GameRuleError(
+                "Aún hay movimientos posibles con los dados restantes: debés jugarlos antes de terminar el turno."
+            )
+
         self._turn_active = False
         self.current_color = self._other_color(self.current_color)
+
 
 
 

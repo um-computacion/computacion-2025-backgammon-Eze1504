@@ -107,6 +107,28 @@ class Board:
         
         return self.__points[position].copy()  # Retorna una copia para evitar modificaciones externas
     
+    # 👉 pegá esto dentro de class Board (por ejemplo debajo de get_point)
+
+    def count_at(self, position: int, color: str) -> int:
+        """
+    Cantidad de fichas de 'color' en el punto 'position'.
+    Compatibilidad con vistas/CLI que llaman count_at(pos, color).
+    """
+        if not self.is_valid_position(position):
+            raise InvalidPositionException(f"Posición {position} no es válida.")
+        return sum(1 for ch in self.__points[position] if ch.get_color() == color)
+
+    # Alias común que algunas UIs usan
+    def count_point(self, position: int, color: str) -> int:
+        return self.count_at(position, color)
+
+    def count_bar(self, color: str) -> int:
+        """
+    Cantidad de fichas de 'color' en el BAR (0).
+    """
+        return len(self.get_checkers_in_bar(color))
+
+    
     def is_valid_position(self, position: int) -> bool:
         """
         Verifica si una posición es válida en el tablero.
