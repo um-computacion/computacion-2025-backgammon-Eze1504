@@ -566,13 +566,16 @@ def _legal_steps_from(game: BackgammonGame, from_pos: int) -> List[int]:
                 game.board.validate_reentry(color, steps)
                 legal.append(steps)
                 continue
+
+            if hasattr(game.board, "can_bear_off_from") and game.board.can_bear_off_from(color, from_pos, steps):
+                legal.append(steps)
+                continue
+
             if hasattr(game.board, "validate_basic_move"):
                 game.board.validate_basic_move(color, from_pos, steps)
                 legal.append(steps)
                 continue
-            if hasattr(game.board, "can_bear_off_from") and game.board.can_bear_off_from(color, from_pos, steps):
-                legal.append(steps)
-                continue
+
             legal.append(steps)
         except (BackgammonException, InvalidMoveException, ValueError):
             continue
