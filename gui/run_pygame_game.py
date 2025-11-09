@@ -14,9 +14,10 @@ Backgammon – Pygame UI completa
 
 from __future__ import annotations
 
-import sys
+import json
 import time
 import random
+from dataclasses import asdict, is_dataclass
 from typing import Optional, Tuple, List
 
 import pygame
@@ -379,6 +380,47 @@ class Button:
         return None
 
 
+def update_button_states(buttons: List[Button], game: BackgammonGame, anim: DiceAnimator, pending_roll: bool) -> None:
+    lookup = {b.action: b for b in buttons}
+    turn_active = bool(getattr(game, "_turn_active", False))
+
+    try:
+        moves_left = len(_get_available_moves(game)) if turn_active else 0
+    except BackgammonException:
+        moves_left = 0
+
+    has_legal_moves = False
+    if turn_active and moves_left > 0:
+        checker = getattr(game, "_any_legal_move_exists_for_any_die", None)
+        if callable(checker):
+            try:
+                has_legal_moves = bool(checker(game.current_color))
+            except BackgammonException:
+                has_legal_moves = moves_left > 0
+        else:
+            # Degradar a revisar los puntos directamente (puede ser costoso, pero infrecuente)
+            candidates = list(range(1, 25)) + [BAR_POS]
+            has_legal_moves = any(_legal_steps_from(game, pt) for pt in candidates)
+
+    game_over = bool(getattr(game, "game_over", False))
+
+    roll_btn = lookup.get("roll")
+    if roll_btn:
+        roll_btn.disabled = game_over or anim.running or pending_roll or turn_active
+
+    end_btn = lookup.get("end")
+    if end_btn:
+        end_btn.disabled = game_over or (not turn_active) or has_legal_moves
+
+    hint_btn = lookup.get("hint")
+    if hint_btn:
+        hint_btn.disabled = game_over or (not turn_active)
+
+    for action in ("new", "save", "quit"):
+        btn = lookup.get(action)
+        if btn:
+            btn.disabled = False
+
 def draw_turn_indicator(surface, area: pygame.Rect, game: BackgammonGame, font: pygame.font.Font):
     """Muestra el color del turno con un chip y texto."""
     st = game.state()
@@ -477,28 +519,23 @@ def try_move(game: BackgammonGame, from_pos: int, steps: int) -> str:
         return str(ex)
     except BackgammonException as ex:
         return str(ex)
-    except Exception as ex:
-        return str(ex)
 
 
 def _own_checker_on(board: Board, point: int, color: str) -> bool:
-    try:
-        return (count_at(board, point, color) or 0) > 0
-    except Exception:
-        return False
+    return (count_at(board, point, color) or 0) > 0
 
 
 def _get_available_moves(game: BackgammonGame) -> List[int]:
     if hasattr(game, "_get_available_moves"):
         try:
             return list(getattr(game, "_get_available_moves")())
-        except Exception:
+        except (BackgammonException, ValueError):
             pass
     am = getattr(game.dice, "available_moves", None)
     if callable(am):
         try:
             return list(am()) or []
-        except Exception:
+        except (BackgammonException, ValueError):
             return []
     if isinstance(am, (list, tuple)):
         return list(am)
@@ -510,16 +547,18 @@ def _legal_steps_from(game: BackgammonGame, from_pos: int) -> List[int]:
     dice_vals = _get_available_moves(game)
     if not dice_vals:
         return []
-    try:
-        has_bar = bool(game.board.get_checkers_in_bar(color))
-    except Exception:
+    has_bar = False
+    bar_fetcher = getattr(game.board, "get_checkers_in_bar", None)
+    if callable(bar_fetcher):
         try:
-            has_bar = (getattr(game.board, "count_at", lambda p, c: 0)(BAR_POS, color) > 0)
-        except Exception:
+            has_bar = bool(bar_fetcher(color))
+        except BackgammonException:
             has_bar = False
+    else:
+        has_bar = count_bar(game.board, color) > 0
 
     legal: List[int] = []
-    for steps in sorted(set(dice_vals)):
+    for steps in sorted(dice_vals):
         try:
             if has_bar and from_pos != BAR_POS:
                 continue
@@ -527,16 +566,19 @@ def _legal_steps_from(game: BackgammonGame, from_pos: int) -> List[int]:
                 game.board.validate_reentry(color, steps)
                 legal.append(steps)
                 continue
+
+            if hasattr(game.board, "can_bear_off_from") and game.board.can_bear_off_from(color, from_pos, steps):
+                legal.append(steps)
+                continue
+
             if hasattr(game.board, "validate_basic_move"):
                 game.board.validate_basic_move(color, from_pos, steps)
                 legal.append(steps)
                 continue
-            if hasattr(game.board, "can_bear_off_from") and game.board.can_bear_off_from(color, from_pos, steps):
-                legal.append(steps)
-                continue
+
             legal.append(steps)
-        except Exception:
-            pass
+        except (BackgammonException, InvalidMoveException, ValueError):
+            continue
     return sorted(legal)
 
 
@@ -568,6 +610,29 @@ def draw_legal_badges(surface, font_small, positions, selected_from: int, legal_
         pygame.draw.rect(surface, (30, 80, 30), box, width=2, border_radius=12)
         surface.blit(t, (box.left + 8, box.top + 4))
         x += bw + gap
+
+
+# ------------- Utilidades de snapshot -------------
+def _to_serializable(obj):
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, (list, tuple)):
+        return [_to_serializable(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: _to_serializable(value) for key, value in obj.items()}
+    if hasattr(obj, "__dict__"):
+        return {key: _to_serializable(value) for key, value in vars(obj).items()}
+    return obj
+
+
+def save_snapshot(game: BackgammonGame, filename: str = "snapshot.json") -> str:
+    payload = {"state": _to_serializable(game.state())}
+    result = getattr(game, "result", None)
+    if result is not None:
+        payload["result"] = _to_serializable(result)
+    with open(filename, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    return f"Partida guardada en {filename}"
 
 
 # ------------- Inicialización de juego -------------
@@ -650,6 +715,8 @@ def main():
         for b in buttons:
             b.hover = b.rect.collidepoint(mx, my)
 
+        update_button_states(buttons, game, anim, pending_roll)
+
         for ev in pygame.event.get():
             # Botones
             for b in buttons:
@@ -662,6 +729,8 @@ def main():
                         drag_from = None
                         hint_overlay = None
                         last_msg = "Nueva partida."
+                        pending_roll = False
+                        anim.running = False
                     elif action == "roll":
                         if not anim.running:
                             anim.start()
@@ -683,26 +752,10 @@ def main():
                             hint_overlay = None
                             last_msg = str(ex)
                     elif action == "save":
-                        import json
-                        from dataclasses import asdict, is_dataclass
-                        st = game.state()
-
-                        def _to_dict(obj):
-                            if is_dataclass(obj):
-                                return asdict(obj)
-                            if isinstance(obj, (list, tuple)):
-                                return list(obj)
-                            if hasattr(obj, "__dict__"):
-                                return dict(vars(obj))
-                            return obj
-
-                        payload = {"state": _to_dict(st)}
-                        result = getattr(game, "result", None)
-                        if result is not None:
-                            payload["result"] = _to_dict(result)
-                        with open("snapshot.json", "w", encoding="utf-8") as f:
-                            json.dump(payload, f, ensure_ascii=False, indent=2)
-                        last_msg = "Partida guardada en snapshot.json"
+                        try:
+                            last_msg = save_snapshot(game)
+                        except OSError as ex:
+                            last_msg = f"Error al guardar partida: {ex}"
                     elif action == "quit":
                         running = False
 
@@ -733,26 +786,10 @@ def main():
                     except BackgammonException as ex:
                         last_msg = str(ex)
                 elif ev.key == pygame.K_s:
-                    import json
-                    from dataclasses import asdict, is_dataclass
-                    st = game.state()
-
-                    def _to_dict(obj):
-                        if is_dataclass(obj):
-                            return asdict(obj)
-                        if isinstance(obj, (list, tuple)):
-                            return list(obj)
-                        if hasattr(obj, "__dict__"):
-                            return dict(vars(obj))
-                        return obj
-
-                    payload = {"state": _to_dict(st)}
-                    result = getattr(game, "result", None)
-                    if result is not None:
-                        payload["result"] = _to_dict(result)
-                    with open("snapshot.json", "w", encoding="utf-8") as f:
-                        json.dump(payload, f, ensure_ascii=False, indent=2)
-                    last_msg = "Partida guardada en snapshot.json"
+                    try:
+                        last_msg = save_snapshot(game)
+                    except OSError as ex:
+                        last_msg = f"Error al guardar partida: {ex}"
                 elif pygame.K_1 <= ev.key <= pygame.K_6:
                     steps = ev.key - pygame.K_0
                     if selected_from is None:
@@ -829,7 +866,7 @@ def main():
         pygame.display.flip()
 
     pygame.quit()
-    sys.exit(0)
+    return
 
 
 if __name__ == "__main__":
