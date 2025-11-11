@@ -181,7 +181,11 @@ def build_point_layout(rect: pygame.Rect):
     bot_rect = pygame.Rect(panel_rect.left, panel_rect.top + half_h, panel_rect.width, half_h)
 
     x_cols_bottom = list(reversed(xs_left + xs_right))
-    x_cols_top = list(reversed(xs_left + xs_right))
+    # La parte superior del tablero sigue la numeración estándar de Backgammon:
+    # los puntos 13-18 ocupan el cuadrante superior izquierdo y 19-24 el
+    # superior derecho. No debemos invertir este orden o los colores llegarán a
+    # cuadrantes incorrectos (por ejemplo, las fichas negras terminarían abajo).
+    x_cols_top = xs_left + xs_right
 
     for i in range(POINTS_PER_SIDE):
         pt_idx_bottom = i + 1
