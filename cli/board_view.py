@@ -9,8 +9,8 @@ from typing import Iterable, Tuple
 WHITE = "white"
 BLACK = "black"
 
-POINTS_TOP = list(range(24, 12, -1))   # 24..13 (izq->der)
-POINTS_BOT = list(range(1, 13))        # 1..12  (izq->der)
+POINTS_TOP = list(range(13, 25))       # 13..24 (izq->der)
+POINTS_BOT = list(range(12, 0, -1))    # 12..1  (izq->der)
 
 MAX_STACK_RENDER = 5  # cuántas fichas se dibujan por columna antes de poner "+n"
 
@@ -99,6 +99,11 @@ def _render_header_footer(points: Iterable[int]) -> str:
     return " ".join(labels)
 
 
+def _indent_block(block: str, prefix: str = "   ") -> str:
+    """Agrega un prefijo a cada línea de un bloque multilinea."""
+    return "\n".join(f"{prefix}{line}" for line in block.splitlines())
+
+
 def _render_bar_and_off(board) -> str:
     w_bar = _count_at(board, 0, WHITE)
     b_bar = _count_at(board, 0, BLACK)
@@ -111,7 +116,7 @@ def _render_bar_and_off(board) -> str:
 
 def render_board(board) -> str:
     """
-    Tablero en ASCII, con dos alas (top: 24..13, bottom: 1..12),
+    Tablero en ASCII, con dos alas (top: 13..24, bottom: 12..1),
     más leyendas y BAR/OFF.
     """
     top_idx = _render_header_footer(POINTS_TOP)
@@ -126,9 +131,9 @@ def render_board(board) -> str:
 
     return (
         f"   {top_idx}\n"
-        f"{top_rows}\n"
-        f"{sep}\n"
-        f"{bot_rows}\n"
+        f"{_indent_block(top_rows)}\n"
+        f"   {sep}\n"
+        f"{_indent_block(bot_rows)}\n"
         f"   {bot_idx}\n"
         f"{meta}"
     )
